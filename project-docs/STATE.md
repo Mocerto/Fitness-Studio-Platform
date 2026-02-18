@@ -10,7 +10,7 @@ Phase 1: ERP Core (B2B Admin)
 
 ## Current task (one sentence)
 
-Add basic analytics dashboard (revenue + attendance).
+Add Supabase Auth + role-based route guards.
 
 ## What is done
 
@@ -104,6 +104,12 @@ Add basic analytics dashboard (revenue + attendance).
   - Minimal UI: `/check-in` — session dropdown (SCHEDULED only), ACTIVE member list with name search, per-member check-in button with in-flight + already-checked-in state; `/attendance` list with status/session_id/member_id filters + inline Cancel button
   - Nav updated: Check-In, Attendance added to layout header
   - Verified app compiles cleanly (`npm run build`), 34 routes registered
+- Implemented Analytics Dashboard:
+
+  - `GET /api/dashboard` — tenant-scoped; optional `from`/`to` (YYYY-MM-DD, default today); NaN-guarded; `to` includes end-of-day; returns: `revenue_cents_total` (RECORDED payments), `payments_count`, `attendance_checkins_count` (keyed on `checked_in_at`), `attendance_cancelled_count` (keyed on `created_at`), `active_members_count` (snapshot), `sessions_scheduled_count`, `sessions_cancelled_count`; all 7 queries run in `Promise.all`
+  - `/dashboard` UI — KPI cards: Revenue (USD formatted), Check-ins, Active Members, Sessions Scheduled; from/to date inputs defaulting to today; Refresh button; try/catch/finally pattern; studioId from localStorage
+  - Nav updated: Dashboard link added after Home
+  - Verified app compiles cleanly (`npm run build`), 36 routes registered
 
 ## What is in progress
 
@@ -113,15 +119,15 @@ Add basic analytics dashboard (revenue + attendance).
 
 - Decide whether to enforce "one active contract per member" with a partial unique index or service-layer validation.
 - Confirm auth provider choice (Supabase Auth vs Clerk) before wiring role-based route guards.
+- Decision pending: restore `remaining_classes` on attendance cancellation? MVP does NOT restore (documented in code). Recommended next small improvement after auth.
 
 ## Next exact step (copy-pastable)
 
-- Add basic analytics dashboard (revenue + attendance).
+- Add Supabase Auth + role-based route guards (confirm provider choice first).
 
 ## Definition of Done for current task
 
-- Contracts create endpoint stores `plan_type_snapshot` and `class_limit_snapshot` from selected plan.
-- Contracts list endpoint returns tenant-scoped contracts with member + plan references.
-- For limited plans, `remaining_classes` initializes from plan `class_limit`; for unlimited, it is null.
-- Contract create/list enforce tenant isolation using `x-studio-id`.
-- Minimal Contracts UI supports create form and list view without touching other modules.
+- Auth provider chosen (Supabase Auth or Clerk).
+- Login/logout flow working.
+- `x-studio-id` resolved from authenticated session (not entered manually).
+- Role-based guards block unauthorized access to API routes and UI pages.

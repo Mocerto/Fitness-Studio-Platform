@@ -19,6 +19,7 @@ export default function RootLayout({
         <header>
           <nav className="row">
             <Link href="/">Home</Link>
+            <Link href="/dashboard">Dashboard</Link>
             <Link href="/members">Members</Link>
             <Link href="/plans">Plans</Link>
             <Link href="/contracts">Contracts</Link>
