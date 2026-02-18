@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -13,7 +14,8 @@ type CreateContractPayload = {
 
 export default function NewContractPage() {
   const router = useRouter();
-  const [studioId, setStudioId] = useState("");
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [memberId, setMemberId] = useState("");
   const [planId, setPlanId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -22,9 +24,6 @@ export default function NewContractPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("studio_id");
-    if (stored) setStudioId(stored);
-
     const today = new Date().toISOString().split("T")[0] ?? "";
     setStartDate(today);
   }, []);
@@ -33,8 +32,8 @@ export default function NewContractPage() {
     event.preventDefault();
     setError("");
 
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
     if (!memberId.trim()) {
@@ -70,7 +69,6 @@ export default function NewContractPage() {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-studio-id": studioId.trim(),
         },
         body: JSON.stringify(payload),
       });
@@ -81,7 +79,6 @@ export default function NewContractPage() {
         return;
       }
 
-      window.localStorage.setItem("studio_id", studioId.trim());
       router.push("/contracts");
       router.refresh();
     } catch {
@@ -99,15 +96,6 @@ export default function NewContractPage() {
       </p>
 
       <form className="stack" onSubmit={handleSubmit}>
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(e) => setStudioId(e.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Member ID
           <input

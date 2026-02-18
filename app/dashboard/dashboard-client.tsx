@@ -1,5 +1,6 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
 type DashboardData = {
@@ -23,23 +24,18 @@ function todayISODate() {
 }
 
 export default function DashboardClient() {
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const today = todayISODate();
-  const [studioId, setStudioId] = useState("");
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem("studio_id");
-    if (stored) setStudioId(stored);
-  }, []);
-
   const fetchDashboard = useCallback(async () => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setData(null);
-      setError("Provide studio id first.");
       return;
     }
 
@@ -53,7 +49,6 @@ export default function DashboardClient() {
 
     try {
       const response = await fetch(`/api/dashboard${query}`, {
-        headers: { "x-studio-id": studioId.trim() },
         cache: "no-store",
       });
 
@@ -73,8 +68,7 @@ export default function DashboardClient() {
   }, [studioId, from, to]);
 
   useEffect(() => {
-    if (studioId.trim()) {
-      window.localStorage.setItem("studio_id", studioId.trim());
+    if (studioId) {
       void fetchDashboard();
     } else {
       setData(null);
@@ -86,15 +80,6 @@ export default function DashboardClient() {
       <h1>Dashboard</h1>
 
       <div className="row">
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(e) => setStudioId(e.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           From
           <input
@@ -148,7 +133,7 @@ export default function DashboardClient() {
           </div>
         </div>
       ) : !loading ? (
-        <p>Enter a studio ID to see metrics.</p>
+        <p>Loading metrics...</p>
       ) : null}
     </section>
   );

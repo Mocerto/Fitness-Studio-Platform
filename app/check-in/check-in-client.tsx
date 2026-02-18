@@ -1,5 +1,6 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
 type Session = {
@@ -24,7 +25,8 @@ type AttendanceRecord = {
 type AttendanceMap = Record<string, boolean>; // member_id -> already checked in
 
 export default function CheckInClient() {
-  const [studioId, setStudioId] = useState("");
+  const { data: authSession } = useSession();
+  const studioId = authSession?.user?.studio_id ?? "";
   const [sessions, setSessions] = useState<Session[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -36,15 +38,8 @@ export default function CheckInClient() {
   const [checkingIn, setCheckingIn] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const storedStudioId = window.localStorage.getItem("studio_id");
-    if (storedStudioId) {
-      setStudioId(storedStudioId);
-    }
-  }, []);
-
   const loadSessions = useCallback(async () => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setSessions([]);
       return;
     }
@@ -52,7 +47,6 @@ export default function CheckInClient() {
     setLoadingSessions(true);
     try {
       const response = await fetch("/api/sessions?status=SCHEDULED", {
-        headers: { "x-studio-id": studioId.trim() },
         cache: "no-store",
       });
       const payload = (await response.json()) as { data?: Session[]; message?: string };
@@ -60,22 +54,19 @@ export default function CheckInClient() {
         const message = payload.message ?? "Failed to load sessions";
         setSessions([]);
         setError(message);
-        alert(message);
         return;
       }
       setSessions(payload.data ?? []);
     } catch {
-      const message = "Failed to load sessions";
       setSessions([]);
-      setError(message);
-      alert(message);
+      setError("Failed to load sessions");
     } finally {
       setLoadingSessions(false);
     }
   }, [studioId]);
 
   const loadMembers = useCallback(async () => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setMembers([]);
       return;
     }
@@ -83,7 +74,6 @@ export default function CheckInClient() {
     setLoadingMembers(true);
     try {
       const response = await fetch("/api/members?status=ACTIVE", {
-        headers: { "x-studio-id": studioId.trim() },
         cache: "no-store",
       });
       const payload = (await response.json()) as { data?: Member[]; message?: string };
@@ -91,22 +81,19 @@ export default function CheckInClient() {
         const message = payload.message ?? "Failed to load members";
         setMembers([]);
         setError(message);
-        alert(message);
         return;
       }
       setMembers(payload.data ?? []);
     } catch {
-      const message = "Failed to load members";
       setMembers([]);
-      setError(message);
-      alert(message);
+      setError("Failed to load members");
     } finally {
       setLoadingMembers(false);
     }
   }, [studioId]);
 
   useEffect(() => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setSessions([]);
       setMembers([]);
       setSelectedSessionId("");
@@ -114,7 +101,6 @@ export default function CheckInClient() {
       return;
     }
 
-    window.localStorage.setItem("studio_id", studioId.trim());
     void loadSessions();
     void loadMembers();
   }, [studioId, loadSessions, loadMembers]);
@@ -122,12 +108,11 @@ export default function CheckInClient() {
   // Load existing attendance for selected session
   const loadAttendance = useCallback(
     async (sessionId: string) => {
-      if (!sessionId || !studioId.trim()) return;
+      if (!sessionId || !studioId) return;
 
       setLoadingAttendance(true);
       try {
         const response = await fetch(`/api/attendance?session_id=${sessionId}`, {
-          headers: { "x-studio-id": studioId.trim() },
           cache: "no-store",
         });
         const payload = (await response.json()) as {
@@ -139,7 +124,6 @@ export default function CheckInClient() {
           const message = payload.message ?? "Failed to load attendance";
           setAttendanceMap({});
           setError(message);
-          alert(message);
           return;
         }
 
@@ -151,10 +135,8 @@ export default function CheckInClient() {
         }
         setAttendanceMap(map);
       } catch {
-        const message = "Failed to load attendance";
         setAttendanceMap({});
-        setError(message);
-        alert(message);
+        setError("Failed to load attendance");
       } finally {
         setLoadingAttendance(false);
       }
@@ -171,10 +153,8 @@ export default function CheckInClient() {
   }, [selectedSessionId, loadAttendance]);
 
   async function handleCheckIn(memberId: string) {
-    if (!selectedSessionId || !studioId.trim()) {
-      const message = "x-studio-id required";
-      setError(message);
-      alert(message);
+    if (!selectedSessionId || !studioId) {
+      setError("No session selected");
       return;
     }
 
@@ -185,7 +165,6 @@ export default function CheckInClient() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-studio-id": studioId.trim(),
         },
         body: JSON.stringify({ session_id: selectedSessionId, member_id: memberId }),
       });
@@ -197,14 +176,10 @@ export default function CheckInClient() {
       if (response.ok || payload.already_checked_in) {
         setAttendanceMap((prev) => ({ ...prev, [memberId]: true }));
       } else {
-        const message = payload.message ?? "Check-in failed";
-        setError(message);
-        alert(message);
+        setError(payload.message ?? "Check-in failed");
       }
     } catch {
-      const message = "Network error during check-in";
-      setError(message);
-      alert(message);
+      setError("Network error during check-in");
     } finally {
       setCheckingIn((prev) => ({ ...prev, [memberId]: false }));
     }
@@ -220,19 +195,6 @@ export default function CheckInClient() {
       <h1>Check-In</h1>
 
       {error && <p style={{ color: "red" }}>{error}</p>}
-
-      <section style={{ marginBottom: "1rem" }}>
-        <label htmlFor="studio-id-input">
-          <strong>Studio ID</strong>
-        </label>
-        <input
-          id="studio-id-input"
-          value={studioId}
-          onChange={(e) => setStudioId(e.target.value)}
-          placeholder="UUID from studios table"
-          style={{ display: "block", marginTop: "0.5rem" }}
-        />
-      </section>
 
       <section>
         <label htmlFor="session-select">

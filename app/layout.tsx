@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { auth, signOut } from "@/auth";
+import Providers from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,11 +10,13 @@ export const metadata: Metadata = {
   description: "MVP admin panel",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
+
   return (
     <html lang="en">
       <body>
@@ -27,9 +31,27 @@ export default function RootLayout({
             <Link href="/sessions">Sessions</Link>
             <Link href="/check-in">Check-In</Link>
             <Link href="/attendance">Attendance</Link>
+
+            {session?.user && (
+              <>
+                <span style={{ marginLeft: "auto", opacity: 0.7 }}>
+                  {session.user.email}
+                </span>
+                <form
+                  action={async () => {
+                    "use server";
+                    await signOut({ redirectTo: "/login" });
+                  }}
+                >
+                  <button type="submit">Sign out</button>
+                </form>
+              </>
+            )}
           </nav>
         </header>
-        <main>{children}</main>
+        <Providers>
+          <main>{children}</main>
+        </Providers>
       </body>
     </html>
   );

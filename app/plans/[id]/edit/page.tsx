@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -29,9 +30,10 @@ type UpdatePlanPayload = {
 export default function EditPlanPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const planId = useMemo(() => (typeof params.id === "string" ? params.id : ""), [params.id]);
 
-  const [studioId, setStudioId] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -44,15 +46,8 @@ export default function EditPlanPage() {
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
-    const storedStudioId = window.localStorage.getItem("studio_id");
-    if (storedStudioId) {
-      setStudioId(storedStudioId);
-    }
-  }, []);
-
-  useEffect(() => {
     async function loadPlan() {
-      if (!studioId.trim() || !planId) {
+      if (!studioId || !planId) {
         return;
       }
 
@@ -61,9 +56,6 @@ export default function EditPlanPage() {
 
       try {
         const response = await fetch("/api/plans", {
-          headers: {
-            "x-studio-id": studioId.trim(),
-          },
           cache: "no-store",
         });
 
@@ -86,9 +78,7 @@ export default function EditPlanPage() {
         setPriceCents(String(foundPlan.price_cents));
         setIsActive(foundPlan.is_active);
       } catch {
-        const message = "Failed to load plan.";
-        setError(message);
-        alert(message);
+        setError("Failed to load plan.");
       } finally {
         setLoading(false);
       }
@@ -101,8 +91,8 @@ export default function EditPlanPage() {
     event.preventDefault();
     setError("");
 
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
 
@@ -136,7 +126,6 @@ export default function EditPlanPage() {
         method: "PATCH",
         headers: {
           "content-type": "application/json",
-          "x-studio-id": studioId.trim(),
         },
         body: JSON.stringify(payload),
       });
@@ -147,13 +136,10 @@ export default function EditPlanPage() {
         return;
       }
 
-      window.localStorage.setItem("studio_id", studioId.trim());
       router.push("/plans");
       router.refresh();
     } catch {
-      const message = "Failed to update plan.";
-      setError(message);
-      alert(message);
+      setError("Failed to update plan.");
     } finally {
       setSubmitting(false);
     }
@@ -162,8 +148,8 @@ export default function EditPlanPage() {
   async function handleDeactivate() {
     setError("");
 
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
 
@@ -172,9 +158,6 @@ export default function EditPlanPage() {
     try {
       const response = await fetch(`/api/plans/${planId}/deactivate`, {
         method: "POST",
-        headers: {
-          "x-studio-id": studioId.trim(),
-        },
       });
 
       const result = (await response.json()) as { message?: string };
@@ -185,9 +168,7 @@ export default function EditPlanPage() {
 
       setIsActive(false);
     } catch {
-      const message = "Failed to deactivate plan.";
-      setError(message);
-      alert(message);
+      setError("Failed to deactivate plan.");
     } finally {
       setSubmitting(false);
     }
@@ -201,15 +182,6 @@ export default function EditPlanPage() {
       </p>
 
       <form className="stack" onSubmit={handleSubmit}>
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(event) => setStudioId(event.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Name
           <input

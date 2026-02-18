@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getStudioId, missingStudioHeaderResponse } from "@/lib/tenant";
 
 export async function GET(request: NextRequest) {
-  const studioId = getStudioId(request);
+  const studioId = await getStudioId();
   if (!studioId) {
     return missingStudioHeaderResponse();
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
 type PlanType = "UNLIMITED" | "LIMITED";
@@ -23,23 +24,16 @@ function formatDate(value: string) {
 }
 
 export default function PlansClient() {
-  const [studioId, setStudioId] = useState("");
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [filter, setFilter] = useState<Filter>("ALL");
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const storedStudioId = window.localStorage.getItem("studio_id");
-    if (storedStudioId) {
-      setStudioId(storedStudioId);
-    }
-  }, []);
-
   const fetchPlans = useCallback(async () => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setPlans([]);
-      setError("Provide studio id first.");
       return;
     }
 
@@ -56,9 +50,6 @@ export default function PlansClient() {
 
     try {
       const response = await fetch(`/api/plans${query}`, {
-        headers: {
-          "x-studio-id": studioId.trim(),
-        },
         cache: "no-store",
       });
 
@@ -72,17 +63,14 @@ export default function PlansClient() {
       setPlans(payload.data ?? []);
     } catch {
       setPlans([]);
-      const message = "Failed to load plans.";
-      setError(message);
-      alert(message);
+      setError("Failed to load plans.");
     } finally {
       setLoading(false);
     }
   }, [filter, studioId]);
 
   useEffect(() => {
-    if (studioId.trim()) {
-      window.localStorage.setItem("studio_id", studioId.trim());
+    if (studioId) {
       void fetchPlans();
     } else {
       setPlans([]);
@@ -94,15 +82,6 @@ export default function PlansClient() {
       <h1>Plans</h1>
 
       <div className="row">
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(event) => setStudioId(event.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Filter
           <select value={filter} onChange={(event) => setFilter(event.target.value as Filter)}>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -46,8 +47,9 @@ function dollarsToCents(dollars: string): number | null {
 
 export default function NewPaymentPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
 
-  const [studioId, setStudioId] = useState("");
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -62,16 +64,14 @@ export default function NewPaymentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // On mount: restore studio_id and default paid_at to today
+  // Default paid_at to today
   useEffect(() => {
-    const stored = window.localStorage.getItem("studio_id");
-    if (stored) setStudioId(stored);
     setPaidAt(new Date().toISOString().split("T")[0] ?? "");
   }, []);
 
-  // Fetch members whenever studioId changes
+  // Fetch members whenever studioId becomes available
   useEffect(() => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setMembers([]);
       setSelectedMemberId("");
       return;
@@ -82,7 +82,6 @@ export default function NewPaymentPage() {
     void (async () => {
       try {
         const response = await fetch("/api/members", {
-          headers: { "x-studio-id": studioId.trim() },
           cache: "no-store",
         });
         const payload = (await response.json()) as { data?: Member[]; message?: string };
@@ -104,7 +103,7 @@ export default function NewPaymentPage() {
     setContracts([]);
     setSelectedContractId("");
 
-    if (!studioId.trim() || !selectedMemberId) {
+    if (!studioId || !selectedMemberId) {
       return;
     }
 
@@ -115,7 +114,6 @@ export default function NewPaymentPage() {
         const response = await fetch(
           `/api/contracts?member_id=${encodeURIComponent(selectedMemberId)}`,
           {
-            headers: { "x-studio-id": studioId.trim() },
             cache: "no-store",
           },
         );
@@ -140,8 +138,8 @@ export default function NewPaymentPage() {
     event.preventDefault();
     setError("");
 
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
     if (!selectedMemberId) {
@@ -184,7 +182,6 @@ export default function NewPaymentPage() {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-studio-id": studioId.trim(),
         },
         body: JSON.stringify(payload),
       });
@@ -195,7 +192,6 @@ export default function NewPaymentPage() {
         return;
       }
 
-      window.localStorage.setItem("studio_id", studioId.trim());
       router.push("/payments");
       router.refresh();
     } catch {
@@ -213,15 +209,6 @@ export default function NewPaymentPage() {
       </p>
 
       <form className="stack" onSubmit={handleSubmit}>
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(e) => setStudioId(e.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Member
           <select

@@ -9,7 +9,7 @@ type RouteContext = {
 };
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const studioId = getStudioId(request);
+  const studioId = await getStudioId();
   if (!studioId) {
     return missingStudioHeaderResponse();
   }

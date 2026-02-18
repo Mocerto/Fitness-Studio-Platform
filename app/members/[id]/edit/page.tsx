@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -17,9 +18,10 @@ type Member = {
 export default function EditMemberPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const memberId = useMemo(() => (typeof params.id === "string" ? params.id : ""), [params.id]);
 
-  const [studioId, setStudioId] = useState("");
   const [member, setMember] = useState<Member | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -31,15 +33,8 @@ export default function EditMemberPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const storedStudioId = window.localStorage.getItem("studio_id");
-    if (storedStudioId) {
-      setStudioId(storedStudioId);
-    }
-  }, []);
-
-  useEffect(() => {
     async function loadMember() {
-      if (!studioId.trim() || !memberId) {
+      if (!studioId || !memberId) {
         return;
       }
 
@@ -47,17 +42,12 @@ export default function EditMemberPage() {
       setError("");
       try {
         const response = await fetch("/api/members", {
-          headers: {
-            "x-studio-id": studioId.trim(),
-          },
           cache: "no-store",
         });
 
         const payload = (await response.json()) as { data?: Member[]; message?: string };
         if (!response.ok) {
-          const message = payload.message ?? "Failed to load member.";
-          setError(message);
-          alert(message);
+          setError(payload.message ?? "Failed to load member.");
           return;
         }
 
@@ -74,9 +64,7 @@ export default function EditMemberPage() {
         setPhone(foundMember.phone ?? "");
         setStatus(foundMember.status);
       } catch {
-        const message = "Failed to load member.";
-        setError(message);
-        alert(message);
+        setError("Failed to load member.");
       } finally {
         setLoading(false);
       }
@@ -88,8 +76,8 @@ export default function EditMemberPage() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
 
@@ -100,7 +88,6 @@ export default function EditMemberPage() {
         method: "PATCH",
         headers: {
           "content-type": "application/json",
-          "x-studio-id": studioId.trim(),
         },
         body: JSON.stringify({
           first_name: firstName,
@@ -113,26 +100,21 @@ export default function EditMemberPage() {
 
       const payload = (await response.json()) as { data?: Member; message?: string };
       if (!response.ok || !payload.data) {
-        const message = payload.message ?? "Failed to update member.";
-        setError(message);
-        alert(message);
+        setError(payload.message ?? "Failed to update member.");
         return;
       }
 
       setMember(payload.data);
-      window.localStorage.setItem("studio_id", studioId.trim());
     } catch {
-      const message = "Failed to update member.";
-      setError(message);
-      alert(message);
+      setError("Failed to update member.");
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleDeactivate() {
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
     setSubmitting(true);
@@ -140,27 +122,19 @@ export default function EditMemberPage() {
     try {
       const response = await fetch(`/api/members/${memberId}/deactivate`, {
         method: "POST",
-        headers: {
-          "x-studio-id": studioId.trim(),
-        },
       });
 
       const payload = (await response.json()) as { data?: Member; message?: string };
       if (!response.ok || !payload.data) {
-        const message = payload.message ?? "Failed to deactivate member.";
-        setError(message);
-        alert(message);
+        setError(payload.message ?? "Failed to deactivate member.");
         return;
       }
 
       setMember(payload.data);
       setStatus(payload.data.status);
-      window.localStorage.setItem("studio_id", studioId.trim());
       router.refresh();
     } catch {
-      const message = "Failed to deactivate member.";
-      setError(message);
-      alert(message);
+      setError("Failed to deactivate member.");
     } finally {
       setSubmitting(false);
     }
@@ -174,15 +148,6 @@ export default function EditMemberPage() {
       </p>
 
       <form className="stack" onSubmit={handleSubmit}>
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(event) => setStudioId(event.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           First name
           <input

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
 type PaymentStatus = "RECORDED" | "REFUNDED" | "VOID";
@@ -29,7 +30,8 @@ function formatDatetime(value: string) {
 }
 
 export default function PaymentsClient() {
-  const [studioId, setStudioId] = useState("");
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [memberIdFilter, setMemberIdFilter] = useState("");
   const [contractIdFilter, setContractIdFilter] = useState("");
@@ -39,15 +41,9 @@ export default function PaymentsClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem("studio_id");
-    if (stored) setStudioId(stored);
-  }, []);
-
   const fetchPayments = useCallback(async () => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setPayments([]);
-      setError("Provide studio id first.");
       return;
     }
 
@@ -64,7 +60,6 @@ export default function PaymentsClient() {
 
     try {
       const response = await fetch(`/api/payments${query}`, {
-        headers: { "x-studio-id": studioId.trim() },
         cache: "no-store",
       });
 
@@ -84,8 +79,7 @@ export default function PaymentsClient() {
   }, [studioId, statusFilter, memberIdFilter, contractIdFilter, fromFilter, toFilter]);
 
   useEffect(() => {
-    if (studioId.trim()) {
-      window.localStorage.setItem("studio_id", studioId.trim());
+    if (studioId) {
       void fetchPayments();
     } else {
       setPayments([]);
@@ -97,15 +91,6 @@ export default function PaymentsClient() {
       <h1>Payments</h1>
 
       <div className="row">
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(e) => setStudioId(e.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Status
           <select

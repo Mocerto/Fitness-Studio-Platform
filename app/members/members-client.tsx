@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
 type MemberStatus = "ACTIVE" | "FROZEN" | "INACTIVE";
@@ -21,23 +22,16 @@ function formatDate(value: string) {
 }
 
 export default function MembersClient() {
-  const [studioId, setStudioId] = useState("");
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [statusFilter, setStatusFilter] = useState<"ALL" | MemberStatus>("ALL");
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const storedStudioId = window.localStorage.getItem("studio_id");
-    if (storedStudioId) {
-      setStudioId(storedStudioId);
-    }
-  }, []);
-
   const fetchMembers = useCallback(async () => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setMembers([]);
-      setError("Provide studio id first.");
       return;
     }
 
@@ -47,9 +41,6 @@ export default function MembersClient() {
     try {
       const query = statusFilter === "ALL" ? "" : `?status=${statusFilter}`;
       const response = await fetch(`/api/members${query}`, {
-        headers: {
-          "x-studio-id": studioId.trim(),
-        },
         cache: "no-store",
       });
 
@@ -58,24 +49,20 @@ export default function MembersClient() {
         const message = payload.message ?? "Failed to load members.";
         setMembers([]);
         setError(message);
-        alert(message);
         return;
       }
 
       setMembers(payload.data ?? []);
     } catch {
-      const message = "Failed to load members.";
       setMembers([]);
-      setError(message);
-      alert(message);
+      setError("Failed to load members.");
     } finally {
       setLoading(false);
     }
   }, [statusFilter, studioId]);
 
   useEffect(() => {
-    if (studioId.trim()) {
-      window.localStorage.setItem("studio_id", studioId.trim());
+    if (studioId) {
       void fetchMembers();
     } else {
       setMembers([]);
@@ -87,15 +74,6 @@ export default function MembersClient() {
       <h1>Members</h1>
 
       <div className="row">
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(event) => setStudioId(event.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Status
           <select

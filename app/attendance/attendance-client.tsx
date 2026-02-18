@@ -1,8 +1,7 @@
 "use client";
 
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
-
-const STUDIO_ID = process.env.NEXT_PUBLIC_STUDIO_ID ?? "studio-1";
 
 type AttendanceRecord = {
   id: string;
@@ -17,6 +16,8 @@ type AttendanceRecord = {
 };
 
 export default function AttendanceClient() {
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
@@ -28,6 +29,7 @@ export default function AttendanceClient() {
   const [memberIdFilter, setMemberIdFilter] = useState("");
 
   const fetchRecords = useCallback(() => {
+    if (!studioId) return;
     setLoading(true);
     setError("");
     const params = new URLSearchParams();
@@ -35,14 +37,12 @@ export default function AttendanceClient() {
     if (sessionIdFilter.trim()) params.set("session_id", sessionIdFilter.trim());
     if (memberIdFilter.trim()) params.set("member_id", memberIdFilter.trim());
 
-    fetch(`/api/attendance?${params.toString()}`, {
-      headers: { "x-studio-id": STUDIO_ID },
-    })
+    fetch(`/api/attendance?${params.toString()}`)
       .then((r) => r.json())
       .then((json) => setRecords(json.data ?? []))
       .catch(() => setError("Failed to load attendance records"))
       .finally(() => setLoading(false));
-  }, [statusFilter, sessionIdFilter, memberIdFilter]);
+  }, [studioId, statusFilter, sessionIdFilter, memberIdFilter]);
 
   useEffect(() => {
     fetchRecords();
@@ -54,7 +54,6 @@ export default function AttendanceClient() {
     try {
       const res = await fetch(`/api/attendance/${id}/cancel`, {
         method: "POST",
-        headers: { "x-studio-id": STUDIO_ID },
       });
       const json = await res.json();
       if (res.ok) {

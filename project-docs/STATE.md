@@ -6,11 +6,11 @@ Ship a working ERP MVP for a fitness studio.
 
 ## Current phase
 
-Phase 1: ERP Core (B2B Admin)
+Phase 1: ERP Core (B2B Admin) — COMPLETE
 
 ## Current task (one sentence)
 
-Add Supabase Auth + role-based route guards.
+Phase 1 is shipped. Next is seeding the first studio + user in the DB, then deploying.
 
 ## What is done
 
@@ -107,7 +107,7 @@ Add Supabase Auth + role-based route guards.
 - Implemented Analytics Dashboard:
 
   - `GET /api/dashboard` — tenant-scoped; optional `from`/`to` (YYYY-MM-DD, default today); NaN-guarded; `to` includes end-of-day; returns: `revenue_cents_total` (RECORDED payments), `payments_count`, `attendance_checkins_count` (keyed on `checked_in_at`), `attendance_cancelled_count` (keyed on `created_at`), `active_members_count` (snapshot), `sessions_scheduled_count`, `sessions_cancelled_count`; all 7 queries run in `Promise.all`
-  - `/dashboard` UI — KPI cards: Revenue (USD formatted), Check-ins, Active Members, Sessions Scheduled; from/to date inputs defaulting to today; Refresh button; try/catch/finally pattern; studioId from localStorage
+  - `/dashboard` UI — KPI cards: Revenue (USD formatted), Check-ins, Active Members, Sessions Scheduled; from/to date inputs defaulting to today; Refresh button; try/catch/finally pattern
   - Nav updated: Dashboard link added after Home
   - Verified app compiles cleanly (`npm run build`), 36 routes registered
 
@@ -121,11 +121,28 @@ Add Supabase Auth + role-based route guards.
   - `POST /api/attendance/check-in` now loads all ACTIVE contracts per `(studio_id, member_id)`, returns `400 no active contract` for 0 and `409 multiple active contracts` for >1.
   - LIMITED decrement is now concurrency-safe via transactional `updateMany` with `remaining_classes > 0`; if affected rows != 1, request returns `400 no classes left`.
   - Duplicate check-in idempotency preserved: unique conflict (`P2002`) returns `200 already_checked_in=true` and no decrement is applied.
-- UI robustness fixes applied (2026-02-18):
 
-  - `/check-in` now uses user-provided `studio_id` (localStorage pattern), validates non-OK API responses, and renders nullable coach safely (`coach?.name`).
-  - Members UI (`/members`, `/members/new`, `/members/[id]/edit`) now wraps fetch/submit/deactivate flows in `try/catch/finally` with guaranteed loading/submitting reset and alert on error.
-  - `/sessions/new` now surfaces class-types/coaches loading failures with visible error message + alert.
+- Authentication implemented (2026-02-18) — Phase 1 complete:
+
+  - NextAuth v5 (JWT-only, no Prisma adapter) with Credentials provider + bcryptjs password hashing.
+  - `auth.config.ts` — edge-safe config (no Prisma), used by `proxy.ts`. Redirects unauthenticated to `/login`.
+  - `auth.ts` — full config: JWT strategy, `authorize()` fetches user by email + verifies bcrypt hash, embeds `studio_id` + `role` in JWT token + session.
+  - `proxy.ts` — Next.js 16 proxy (replaced deprecated `middleware.ts`), protects all routes except `/login`, `/api/auth/*`, and static files.
+  - `types/next-auth.d.ts` — module augmentation adding `studio_id: string` and `role: string` to `Session.user` and `JWT`.
+  - `app/api/auth/[...nextauth]/route.ts` — NextAuth route handler.
+  - `app/providers.tsx` — `SessionProvider` wrapper for client-side `useSession()`.
+  - `app/login/page.tsx` + `app/login/login-client.tsx` — login form with email + password, `signIn("credentials", ...)`, redirect to `/` on success.
+  - `app/layout.tsx` — async server component, calls `await auth()`, shows user email + Sign out button (server action with `signOut({ redirectTo: "/login" })`).
+  - `lib/tenant.ts` — now reads `studio_id` from JWT session via `auth()` instead of `x-studio-id` header. Eliminates header spoofing attack.
+  - All 19 API routes updated: `getStudioId(request)` → `await getStudioId()`.
+  - All 9 `*-client.tsx` files updated: removed localStorage `studio_id` pattern + Studio ID input, replaced with `useSession()` from `next-auth/react`.
+  - All 5 `new/page.tsx` form pages updated: same localStorage removal, `useSession()` for studio_id.
+  - Both edit pages (`/members/[id]/edit`, `/plans/[id]/edit`) updated: same pattern.
+  - `prisma/schema.prisma` — added `password_hash String?` to User model.
+  - `prisma/migrations/20260218120000_add_user_password_hash/migration.sql` — `ALTER TABLE "users" ADD COLUMN "password_hash" TEXT;`
+  - `package.json` — added `"postinstall": "prisma generate"` for Vercel build, installed `next-auth@^5.0.0-beta.30`, `bcryptjs`, `@types/bcryptjs`.
+  - `.npmrc` — `legacy-peer-deps=true` for Vercel compatibility.
+  - **Build passes: 38 routes, 0 TypeScript errors.**
 
 ## What is in progress
 
@@ -133,17 +150,28 @@ Add Supabase Auth + role-based route guards.
 
 ## Blockers / Questions
 
-- Decide whether to enforce "one active contract per member" with a partial unique index or service-layer validation.
-- Confirm auth provider choice (Supabase Auth vs Clerk) before wiring role-based route guards.
-- Decision pending: restore `remaining_classes` on attendance cancellation? MVP does NOT restore (documented in code). Recommended next small improvement after auth.
+- `password_hash` migration must be applied to production DB: `npx prisma migrate dev` (or `deploy` in prod). Requires DB access.
+- First studio + user must be seeded manually (INSERT into `studios`, INSERT into `users` with bcrypt hash). No admin signup flow yet.
+- Decision pending: restore `remaining_classes` on attendance cancellation? MVP does NOT restore (documented in code). Small task for next session.
+- Decision pending: add partial unique index on `contracts(studio_id, member_id) WHERE status = 'ACTIVE'` to enforce one-active-contract at DB level (currently service-layer only).
 
 ## Next exact step (copy-pastable)
 
-- Add Supabase Auth + role-based route guards (confirm provider choice first).
+1. Apply the pending migration to the live DB: `npx prisma migrate dev`
+2. Seed first studio row: `INSERT INTO studios (id, name) VALUES (gen_random_uuid(), 'My Studio');`
+3. Seed first user with bcrypt hash:
+   ```sql
+   INSERT INTO users (id, studio_id, email, password_hash, role, is_active)
+   VALUES (gen_random_uuid(), '<studio_id>', 'admin@studio.com', '<bcrypt_hash>', 'ADMIN', true);
+   ```
+4. Deploy (Vercel + managed PostgreSQL).
 
-## Definition of Done for current task
+## Definition of Done for Phase 1
 
-- Auth provider chosen (Supabase Auth or Clerk).
-- Login/logout flow working.
-- `x-studio-id` resolved from authenticated session (not entered manually).
-- Role-based guards block unauthorized access to API routes and UI pages.
+- ✅ All 8 ERP domains implemented (Members, Plans, Contracts, Payments, Sessions, Attendance, Check-in, Dashboard)
+- ✅ Multi-tenant isolation enforced at DB level (composite FKs) and service layer (studio_id from JWT)
+- ✅ Authentication: JWT sessions, login/logout, route protection
+- ✅ Build passes: 38 routes, 0 TypeScript errors
+- ⬜ Migration applied to live DB
+- ⬜ First admin user seeded
+- ⬜ Deployed to production

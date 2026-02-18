@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
 type SessionStatus = "SCHEDULED" | "CANCELLED";
@@ -23,7 +24,8 @@ function formatDatetime(value: string) {
 }
 
 export default function SessionsClient() {
-  const [studioId, setStudioId] = useState("");
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [fromFilter, setFromFilter] = useState("");
   const [toFilter, setToFilter] = useState("");
@@ -31,15 +33,9 @@ export default function SessionsClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem("studio_id");
-    if (stored) setStudioId(stored);
-  }, []);
-
   const fetchSessions = useCallback(async () => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setSessions([]);
-      setError("Provide studio id first.");
       return;
     }
 
@@ -54,7 +50,6 @@ export default function SessionsClient() {
 
     try {
       const response = await fetch(`/api/sessions${query}`, {
-        headers: { "x-studio-id": studioId.trim() },
         cache: "no-store",
       });
 
@@ -74,8 +69,7 @@ export default function SessionsClient() {
   }, [studioId, statusFilter, fromFilter, toFilter]);
 
   useEffect(() => {
-    if (studioId.trim()) {
-      window.localStorage.setItem("studio_id", studioId.trim());
+    if (studioId) {
       void fetchSessions();
     } else {
       setSessions([]);
@@ -83,13 +77,12 @@ export default function SessionsClient() {
   }, [studioId, statusFilter, fromFilter, toFilter, fetchSessions]);
 
   async function handleCancel(sessionId: string) {
-    if (!studioId.trim()) return;
+    if (!studioId) return;
     setError("");
 
     try {
       const response = await fetch(`/api/sessions/${sessionId}/cancel`, {
         method: "POST",
-        headers: { "x-studio-id": studioId.trim() },
       });
 
       if (!response.ok) {
@@ -109,15 +102,6 @@ export default function SessionsClient() {
       <h1>Sessions</h1>
 
       <div className="row">
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(e) => setStudioId(e.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Status
           <select

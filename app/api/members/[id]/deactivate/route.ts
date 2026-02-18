@@ -10,7 +10,7 @@ type RouteContext = {
 };
 
 export async function POST(request: NextRequest, context: RouteContext) {
-  const studioId = getStudioId(request);
+  const studioId = await getStudioId();
   if (!studioId) {
     return missingStudioHeaderResponse();
   }

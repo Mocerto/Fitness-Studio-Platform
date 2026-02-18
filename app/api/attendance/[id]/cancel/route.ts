@@ -9,7 +9,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const studioId = getStudioId(request);
+  const studioId = await getStudioId();
   if (!studioId) {
     return missingStudioHeaderResponse();
   }

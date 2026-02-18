@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type PlanType = "UNLIMITED" | "LIMITED";
 type BillingPeriod = "MONTHLY" | "ONE_TIME";
@@ -18,7 +19,8 @@ type CreatePlanPayload = {
 
 export default function NewPlanPage() {
   const router = useRouter();
-  const [studioId, setStudioId] = useState("");
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [name, setName] = useState("");
   const [type, setType] = useState<PlanType>("UNLIMITED");
   const [classLimit, setClassLimit] = useState("");
@@ -28,19 +30,12 @@ export default function NewPlanPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const storedStudioId = window.localStorage.getItem("studio_id");
-    if (storedStudioId) {
-      setStudioId(storedStudioId);
-    }
-  }, []);
-
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
 
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
 
@@ -74,7 +69,6 @@ export default function NewPlanPage() {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-studio-id": studioId.trim(),
         },
         body: JSON.stringify(payload),
       });
@@ -85,13 +79,10 @@ export default function NewPlanPage() {
         return;
       }
 
-      window.localStorage.setItem("studio_id", studioId.trim());
       router.push("/plans");
       router.refresh();
     } catch {
-      const message = "Failed to create plan.";
-      setError(message);
-      alert(message);
+      setError("Failed to create plan.");
     } finally {
       setSubmitting(false);
     }
@@ -105,15 +96,6 @@ export default function NewPlanPage() {
       </p>
 
       <form className="stack" onSubmit={handleSubmit}>
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(event) => setStudioId(event.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Name
           <input value={name} onChange={(event) => setName(event.target.value)} required />

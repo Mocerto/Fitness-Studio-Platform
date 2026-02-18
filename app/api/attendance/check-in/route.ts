@@ -17,7 +17,7 @@ import { getStudioId, missingStudioHeaderResponse } from "@/lib/tenant";
 const NO_CLASSES_REMAINING = "NO_CLASSES_REMAINING";
 
 export async function POST(request: NextRequest) {
-  const studioId = getStudioId(request);
+  const studioId = await getStudioId();
   if (!studioId) {
     return missingStudioHeaderResponse();
   }

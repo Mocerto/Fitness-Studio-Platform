@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type MemberStatus = "ACTIVE" | "FROZEN" | "INACTIVE";
 
@@ -16,7 +17,8 @@ type CreateMemberPayload = {
 
 export default function NewMemberPage() {
   const router = useRouter();
-  const [studioId, setStudioId] = useState("");
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [form, setForm] = useState<CreateMemberPayload>({
     first_name: "",
     last_name: "",
@@ -27,19 +29,12 @@ export default function NewMemberPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const storedStudioId = window.localStorage.getItem("studio_id");
-    if (storedStudioId) {
-      setStudioId(storedStudioId);
-    }
-  }, []);
-
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
 
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
 
@@ -50,7 +45,6 @@ export default function NewMemberPage() {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-studio-id": studioId.trim(),
         },
         body: JSON.stringify(form),
       });
@@ -60,17 +54,13 @@ export default function NewMemberPage() {
       if (!response.ok) {
         const message = payload.message ?? "Failed to create member.";
         setError(message);
-        alert(message);
         return;
       }
 
-      window.localStorage.setItem("studio_id", studioId.trim());
       router.push("/members");
       router.refresh();
     } catch {
-      const message = "Failed to create member.";
-      setError(message);
-      alert(message);
+      setError("Failed to create member.");
     } finally {
       setSubmitting(false);
     }
@@ -84,15 +74,6 @@ export default function NewMemberPage() {
       </p>
 
       <form className="stack" onSubmit={handleSubmit}>
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(event) => setStudioId(event.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           First name
           <input

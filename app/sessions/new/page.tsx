@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -28,8 +29,9 @@ type CreateSessionPayload = {
 
 export default function NewSessionPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
 
-  const [studioId, setStudioId] = useState("");
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
   const [classTypesLoading, setClassTypesLoading] = useState(false);
   const [coaches, setCoaches] = useState<Coach[]>([]);
@@ -44,20 +46,14 @@ export default function NewSessionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // On mount: restore studio_id
-  useEffect(() => {
-    const stored = window.localStorage.getItem("studio_id");
-    if (stored) setStudioId(stored);
-  }, []);
-
-  // Fetch class types and coaches whenever studioId changes
+  // Fetch class types and coaches whenever studioId becomes available
   useEffect(() => {
     setClassTypes([]);
     setCoaches([]);
     setSelectedClassTypeId("");
     setSelectedCoachId("");
 
-    if (!studioId.trim()) return;
+    if (!studioId) return;
 
     setClassTypesLoading(true);
     setCoachesLoading(true);
@@ -65,22 +61,17 @@ export default function NewSessionPage() {
     void (async () => {
       try {
         const response = await fetch("/api/class-types", {
-          headers: { "x-studio-id": studioId.trim() },
           cache: "no-store",
         });
         const payload = (await response.json()) as { data?: ClassType[]; message?: string };
         if (!response.ok) {
-          const message = payload.message ?? "Failed to load class types.";
-          setError(message);
-          alert(message);
+          setError(payload.message ?? "Failed to load class types.");
           setClassTypes([]);
           return;
         }
         setClassTypes(payload.data ?? []);
       } catch {
-        const message = "Failed to load class types.";
-        setError(message);
-        alert(message);
+        setError("Failed to load class types.");
         setClassTypes([]);
       } finally {
         setClassTypesLoading(false);
@@ -90,22 +81,17 @@ export default function NewSessionPage() {
     void (async () => {
       try {
         const response = await fetch("/api/coaches", {
-          headers: { "x-studio-id": studioId.trim() },
           cache: "no-store",
         });
         const payload = (await response.json()) as { data?: Coach[]; message?: string };
         if (!response.ok) {
-          const message = payload.message ?? "Failed to load coaches.";
-          setError(message);
-          alert(message);
+          setError(payload.message ?? "Failed to load coaches.");
           setCoaches([]);
           return;
         }
         setCoaches(payload.data ?? []);
       } catch {
-        const message = "Failed to load coaches.";
-        setError(message);
-        alert(message);
+        setError("Failed to load coaches.");
         setCoaches([]);
       } finally {
         setCoachesLoading(false);
@@ -125,8 +111,8 @@ export default function NewSessionPage() {
     event.preventDefault();
     setError("");
 
-    if (!studioId.trim()) {
-      setError("x-studio-id required");
+    if (!studioId) {
+      setError("Not authenticated");
       return;
     }
     if (!selectedClassTypeId) {
@@ -166,7 +152,6 @@ export default function NewSessionPage() {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-studio-id": studioId.trim(),
         },
         body: JSON.stringify(payload),
       });
@@ -177,7 +162,6 @@ export default function NewSessionPage() {
         return;
       }
 
-      window.localStorage.setItem("studio_id", studioId.trim());
       router.push("/sessions");
       router.refresh();
     } catch {
@@ -195,15 +179,6 @@ export default function NewSessionPage() {
       </p>
 
       <form className="stack" onSubmit={handleSubmit}>
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(e) => setStudioId(e.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Class Type
           <select

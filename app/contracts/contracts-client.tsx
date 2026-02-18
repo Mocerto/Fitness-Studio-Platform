@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
 type PlanType = "UNLIMITED" | "LIMITED";
@@ -29,22 +30,17 @@ function formatDate(value: string | null) {
 }
 
 export default function ContractsClient() {
-  const [studioId, setStudioId] = useState("");
+  const { data: session } = useSession();
+  const studioId = session?.user?.studio_id ?? "";
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [memberIdFilter, setMemberIdFilter] = useState("");
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem("studio_id");
-    if (stored) setStudioId(stored);
-  }, []);
-
   const fetchContracts = useCallback(async () => {
-    if (!studioId.trim()) {
+    if (!studioId) {
       setContracts([]);
-      setError("Provide studio id first.");
       return;
     }
 
@@ -58,7 +54,6 @@ export default function ContractsClient() {
 
     try {
       const response = await fetch(`/api/contracts${query}`, {
-        headers: { "x-studio-id": studioId.trim() },
         cache: "no-store",
       });
 
@@ -78,8 +73,7 @@ export default function ContractsClient() {
   }, [studioId, statusFilter, memberIdFilter]);
 
   useEffect(() => {
-    if (studioId.trim()) {
-      window.localStorage.setItem("studio_id", studioId.trim());
+    if (studioId) {
       void fetchContracts();
     } else {
       setContracts([]);
@@ -87,12 +81,11 @@ export default function ContractsClient() {
   }, [studioId, statusFilter, fetchContracts]);
 
   async function handlePause(contractId: string) {
-    if (!studioId.trim()) return;
+    if (!studioId) return;
     setError("");
     try {
       const response = await fetch(`/api/contracts/${contractId}/pause`, {
         method: "POST",
-        headers: { "x-studio-id": studioId.trim() },
       });
       if (!response.ok) {
         const result = (await response.json()) as { message?: string };
@@ -106,12 +99,11 @@ export default function ContractsClient() {
   }
 
   async function handleCancel(contractId: string) {
-    if (!studioId.trim()) return;
+    if (!studioId) return;
     setError("");
     try {
       const response = await fetch(`/api/contracts/${contractId}/cancel`, {
         method: "POST",
-        headers: { "x-studio-id": studioId.trim() },
       });
       if (!response.ok) {
         const result = (await response.json()) as { message?: string };
@@ -129,15 +121,6 @@ export default function ContractsClient() {
       <h1>Contracts</h1>
 
       <div className="row">
-        <label>
-          Studio ID
-          <input
-            value={studioId}
-            onChange={(e) => setStudioId(e.target.value)}
-            placeholder="UUID from studios table"
-          />
-        </label>
-
         <label>
           Status
           <select
