@@ -10,7 +10,7 @@ Phase 1: ERP Core (B2B Admin)
 
 ## Current task (one sentence)
 
-Implement Members CRUD (API + minimal UI) for ERP Core.
+Implement Contracts (create + list) with plan snapshots.
 
 ## What is done
 
@@ -22,10 +22,33 @@ Implement Members CRUD (API + minimal UI) for ERP Core.
 - Added Prisma v7 config in `prisma.config.ts` and aligned schema datasource usage.
 - Ran Prisma formatting successfully via local CLI.
 - Created and applied initial migration successfully: `prisma/migrations/20260218034221_init/migration.sql`.
+- Cleaned `.gitignore` to exclude local/build/cache artifacts (kept Prisma migrations tracked).
+- Implemented Members API routes with tenant isolation and zod validation:
+  - `GET /api/members`
+  - `POST /api/members`
+  - `PATCH /api/members/:id`
+  - `POST /api/members/:id/deactivate`
+- Added minimal Members UI pages:
+  - `/members` list + status filter
+  - `/members/new` create form
+  - `/members/[id]/edit` update + deactivate
+- Added Prisma singleton helper in `lib/prisma.ts` and configured Prisma v7 PostgreSQL adapter.
+- Verified app compile/build (`npm run build`) and dev runtime startup for Members routes/pages.
+- Implemented Plans API routes with tenant isolation and zod validation:
+  - `GET /api/plans`
+  - `POST /api/plans`
+  - `PATCH /api/plans/:id`
+  - `POST /api/plans/:id/deactivate`
+- Added minimal Plans UI pages:
+  - `/plans` list + active filter
+  - `/plans/new` create form
+  - `/plans/[id]/edit` update + deactivate
+- Added `lib/plan-validation.ts` with conditional rules for `type` and `class_limit`.
+- Verified app compiles with Plans module (`npm run build`).
 
 ## What is in progress
 
-- Preparing the Members module implementation plan (tenant-safe API + minimal UI).
+- Preparing Contracts implementation scope (create + list with plan snapshots).
 
 ## Blockers / Questions
 
@@ -34,12 +57,12 @@ Implement Members CRUD (API + minimal UI) for ERP Core.
 
 ## Next exact step (copy-pastable)
 
-- Implement Members CRUD (API + minimal UI).
+- Implement Contracts (create + list) with plan snapshots.
 
 ## Definition of Done for current task
 
-- Members list page shows tenant-scoped members with status.
-- Create member form works and persists `first_name`, `last_name`, optional `email/phone`, `status`.
-- Edit member updates allowed fields and preserves tenant isolation.
-- Delete/deactivate action is defined and implemented safely for MVP.
-- API layer validates input and prevents cross-tenant access.
+- Contracts create endpoint stores `plan_type_snapshot` and `class_limit_snapshot` from selected plan.
+- Contracts list endpoint returns tenant-scoped contracts with member + plan references.
+- For limited plans, `remaining_classes` initializes from plan `class_limit`; for unlimited, it is null.
+- Contract create/list enforce tenant isolation using `x-studio-id`.
+- Minimal Contracts UI supports create form and list view without touching other modules.

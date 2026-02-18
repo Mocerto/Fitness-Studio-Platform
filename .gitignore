@@ -19,7 +19,10 @@ dist/
 build/
 coverage/
 .turbo/
+dev.out
+dev.err
 
 # OS/editor noise
 .DS_Store
 Thumbs.db
+.claude/
