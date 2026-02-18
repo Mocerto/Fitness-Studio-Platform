@@ -1,0 +1,12 @@
+{
+  "name": "fitness-studio-platform",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "prisma:format": "prisma format",
+    "prisma:migrate:init": "prisma migrate dev --name init"
+  },
+  "devDependencies": {
+    "prisma": "^7.4.0"
+  }
+}
