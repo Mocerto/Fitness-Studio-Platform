@@ -45,26 +45,35 @@ export default function NewMemberPage() {
 
     setSubmitting(true);
 
-    const response = await fetch("/api/members", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-studio-id": studioId.trim(),
-      },
-      body: JSON.stringify(form),
-    });
+    try {
+      const response = await fetch("/api/members", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-studio-id": studioId.trim(),
+        },
+        body: JSON.stringify(form),
+      });
 
-    const payload = (await response.json()) as { message?: string };
+      const payload = (await response.json()) as { message?: string };
 
-    if (!response.ok) {
-      setError(payload.message ?? "Failed to create member.");
+      if (!response.ok) {
+        const message = payload.message ?? "Failed to create member.";
+        setError(message);
+        alert(message);
+        return;
+      }
+
+      window.localStorage.setItem("studio_id", studioId.trim());
+      router.push("/members");
+      router.refresh();
+    } catch {
+      const message = "Failed to create member.";
+      setError(message);
+      alert(message);
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    window.localStorage.setItem("studio_id", studioId.trim());
-    router.push("/members");
-    router.refresh();
   }
 
   return (

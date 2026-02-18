@@ -12,9 +12,11 @@ import { checkInSchema } from "@/lib/attendance-validation";
 import { prisma } from "@/lib/prisma";
 import { getStudioId, missingStudioHeaderResponse } from "@/lib/tenant";
 
-// Sentinel thrown inside the transaction to signal a lost decrement race.
-// Distinct from PrismaClientKnownRequestError so the catch block can tell them apart.
-const NO_CLASSES_REMAINING = "NO_CLASSES_REMAINING";
+class NoClassesLeftError extends Error {
+  constructor() {
+    super("no classes left");
+  }
+}
 
 export async function POST(request: NextRequest) {
   const studioId = getStudioId(request);
@@ -62,21 +64,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "member is not active" }, { status: 400 });
     }
 
-    // HIGH-1: load ALL ACTIVE contracts to detect ambiguous state.
-    const contracts = await prisma.contract.findMany({
+    // Find member ACTIVE contracts in this studio
+    const activeContracts = await prisma.contract.findMany({
       where: { studio_id: studioId, member_id, status: ContractStatus.ACTIVE },
     });
-    if (contracts.length === 0) {
-      return NextResponse.json({ message: "no active contract for this member" }, { status: 400 });
+    if (activeContracts.length === 0) {
+      return NextResponse.json({ message: "no active contract" }, { status: 400 });
     }
-    if (contracts.length > 1) {
-      return NextResponse.json({ message: "multiple active contracts for this member" }, { status: 409 });
+    if (activeContracts.length > 1) {
+      return NextResponse.json({ message: "multiple active contracts" }, { status: 409 });
     }
-    const contract = contracts[0];
+    const contract = activeContracts[0]!;
 
-    // HIGH-2: both the availability check and the decrement live inside the transaction.
-    // This prevents two concurrent requests from both passing an outside check and both
-    // decrementing, which would push remaining_classes below zero.
+    // Atomically: create attendance + decrement remaining_classes if LIMITED.
+    // Order matters: attendance create runs first so duplicate check-ins fail before decrement.
     const attendance = await prisma.$transaction(async (tx) => {
       // Step 1: insert attendance first.
       // If (studio_id, session_id, member_id) already exists, Prisma throws P2002
@@ -100,13 +101,17 @@ export async function POST(request: NextRequest) {
       // If another request already decremented to 0, count will be 0 and we abort.
       // MEDIUM-1: studio_id included for tenant safety on the write path.
       if (contract.plan_type_snapshot === PlanType.LIMITED) {
-        const decremented = await tx.contract.updateMany({
-          where: { id: contract.id, studio_id: studioId, remaining_classes: { gt: 0 } },
+        const decrement = await tx.contract.updateMany({
+          where: {
+            id: contract.id,
+            studio_id: studioId,
+            status: ContractStatus.ACTIVE,
+            remaining_classes: { gt: 0 },
+          },
           data: { remaining_classes: { decrement: 1 } },
         });
-        if (decremented.count !== 1) {
-          // Throwing here aborts the transaction → attendance row is rolled back.
-          throw new Error(NO_CLASSES_REMAINING);
+        if (decrement.count !== 1) {
+          throw new NoClassesLeftError();
         }
       }
 
@@ -115,9 +120,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: attendance }, { status: 201 });
   } catch (error: unknown) {
-    // Duplicate check-in: unique constraint on (studio_id, session_id, member_id).
-    // Thrown by tx.attendance.create before the decrement step runs,
-    // so remaining_classes is NOT decremented.
+    if (error instanceof NoClassesLeftError) {
+      return NextResponse.json({ message: "no classes left" }, { status: 400 });
+    }
+
+    // Unique constraint (studio_id, session_id, member_id) — already checked in
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       const existing = await prisma.attendance.findFirst({
         where: { studio_id: studioId, session_id, member_id },

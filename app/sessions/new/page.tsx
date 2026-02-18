@@ -69,11 +69,19 @@ export default function NewSessionPage() {
           cache: "no-store",
         });
         const payload = (await response.json()) as { data?: ClassType[]; message?: string };
-        if (response.ok) {
-          setClassTypes(payload.data ?? []);
+        if (!response.ok) {
+          const message = payload.message ?? "Failed to load class types.";
+          setError(message);
+          alert(message);
+          setClassTypes([]);
+          return;
         }
+        setClassTypes(payload.data ?? []);
       } catch {
-        // silent — user will see empty dropdown
+        const message = "Failed to load class types.";
+        setError(message);
+        alert(message);
+        setClassTypes([]);
       } finally {
         setClassTypesLoading(false);
       }
@@ -86,11 +94,19 @@ export default function NewSessionPage() {
           cache: "no-store",
         });
         const payload = (await response.json()) as { data?: Coach[]; message?: string };
-        if (response.ok) {
-          setCoaches(payload.data ?? []);
+        if (!response.ok) {
+          const message = payload.message ?? "Failed to load coaches.";
+          setError(message);
+          alert(message);
+          setCoaches([]);
+          return;
         }
+        setCoaches(payload.data ?? []);
       } catch {
-        // silent — user will see empty dropdown
+        const message = "Failed to load coaches.";
+        setError(message);
+        alert(message);
+        setCoaches([]);
       } finally {
         setCoachesLoading(false);
       }
@@ -196,9 +212,7 @@ export default function NewSessionPage() {
             required
             disabled={classTypesLoading}
           >
-            <option value="">
-              {classTypesLoading ? "Loading class types..." : "— select class type —"}
-            </option>
+            <option value="">{classTypesLoading ? "Loading class types..." : "- select class type -"}</option>
             {classTypes.map((ct) => (
               <option key={ct.id} value={ct.id}>
                 {ct.name}
@@ -214,7 +228,7 @@ export default function NewSessionPage() {
             onChange={(e) => setSelectedCoachId(e.target.value)}
             disabled={coachesLoading}
           >
-            <option value="">{coachesLoading ? "Loading coaches..." : "— none —"}</option>
+            <option value="">{coachesLoading ? "Loading coaches..." : "- none -"}</option>
             {coaches.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -225,22 +239,12 @@ export default function NewSessionPage() {
 
         <label>
           Starts at
-          <input
-            type="datetime-local"
-            value={startsAt}
-            onChange={(e) => setStartsAt(e.target.value)}
-            required
-          />
+          <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} required />
         </label>
 
         <label>
           Ends at (optional)
-          <input
-            type="datetime-local"
-            value={endsAt}
-            min={startsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-          />
+          <input type="datetime-local" value={endsAt} min={startsAt} onChange={(e) => setEndsAt(e.target.value)} />
         </label>
 
         <label>
