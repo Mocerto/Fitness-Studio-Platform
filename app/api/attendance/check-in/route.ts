@@ -12,6 +12,12 @@ import { checkInSchema } from "@/lib/attendance-validation";
 import { prisma } from "@/lib/prisma";
 import { getStudioId, missingStudioHeaderResponse } from "@/lib/tenant";
 
+class NoClassesLeftError extends Error {
+  constructor() {
+    super("no classes left");
+  }
+}
+
 export async function POST(request: NextRequest) {
   const studioId = getStudioId(request);
   if (!studioId) {
@@ -58,22 +64,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "member is not active" }, { status: 400 });
     }
 
-    // Find the member's ACTIVE contract in this studio
-    const contract = await prisma.contract.findFirst({
+    // Find member ACTIVE contracts in this studio
+    const activeContracts = await prisma.contract.findMany({
       where: { studio_id: studioId, member_id, status: ContractStatus.ACTIVE },
     });
-    if (!contract) {
-      return NextResponse.json({ message: "no active contract for this member" }, { status: 400 });
+    if (activeContracts.length === 0) {
+      return NextResponse.json({ message: "no active contract" }, { status: 400 });
     }
-
-    // For LIMITED plans, check remaining classes
-    if (contract.plan_type_snapshot === PlanType.LIMITED) {
-      if (contract.remaining_classes == null || contract.remaining_classes <= 0) {
-        return NextResponse.json({ message: "no classes remaining on this contract" }, { status: 400 });
-      }
+    if (activeContracts.length > 1) {
+      return NextResponse.json({ message: "multiple active contracts" }, { status: 409 });
     }
+    const contract = activeContracts[0]!;
 
-    // Atomically: create attendance + decrement remaining_classes if LIMITED
+    // Atomically: create attendance + decrement remaining_classes if LIMITED.
+    // Order matters: attendance create runs first so duplicate check-ins fail before decrement.
     const attendance = await prisma.$transaction(async (tx) => {
       const record = await tx.attendance.create({
         data: {
@@ -90,10 +94,18 @@ export async function POST(request: NextRequest) {
       });
 
       if (contract.plan_type_snapshot === PlanType.LIMITED) {
-        await tx.contract.update({
-          where: { id: contract.id },
+        const decrement = await tx.contract.updateMany({
+          where: {
+            id: contract.id,
+            studio_id: studioId,
+            status: ContractStatus.ACTIVE,
+            remaining_classes: { gt: 0 },
+          },
           data: { remaining_classes: { decrement: 1 } },
         });
+        if (decrement.count !== 1) {
+          throw new NoClassesLeftError();
+        }
       }
 
       return record;
@@ -101,6 +113,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: attendance }, { status: 201 });
   } catch (error: unknown) {
+    if (error instanceof NoClassesLeftError) {
+      return NextResponse.json({ message: "no classes left" }, { status: 400 });
+    }
+
     // Unique constraint (studio_id, session_id, member_id) — already checked in
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       const existing = await prisma.attendance.findFirst({

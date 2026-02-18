@@ -44,24 +44,33 @@ export default function MembersClient() {
     setLoading(true);
     setError("");
 
-    const query = statusFilter === "ALL" ? "" : `?status=${statusFilter}`;
-    const response = await fetch(`/api/members${query}`, {
-      headers: {
-        "x-studio-id": studioId.trim(),
-      },
-      cache: "no-store",
-    });
+    try {
+      const query = statusFilter === "ALL" ? "" : `?status=${statusFilter}`;
+      const response = await fetch(`/api/members${query}`, {
+        headers: {
+          "x-studio-id": studioId.trim(),
+        },
+        cache: "no-store",
+      });
 
-    const payload = (await response.json()) as { data?: Member[]; message?: string };
-    if (!response.ok) {
+      const payload = (await response.json()) as { data?: Member[]; message?: string };
+      if (!response.ok) {
+        const message = payload.message ?? "Failed to load members.";
+        setMembers([]);
+        setError(message);
+        alert(message);
+        return;
+      }
+
+      setMembers(payload.data ?? []);
+    } catch {
+      const message = "Failed to load members.";
       setMembers([]);
-      setError(payload.message ?? "Failed to load members.");
+      setError(message);
+      alert(message);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setMembers(payload.data ?? []);
-    setLoading(false);
   }, [statusFilter, studioId]);
 
   useEffect(() => {

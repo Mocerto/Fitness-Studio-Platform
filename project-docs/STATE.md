@@ -105,6 +105,22 @@ Add basic analytics dashboard (revenue + attendance).
   - Nav updated: Check-In, Attendance added to layout header
   - Verified app compiles cleanly (`npm run build`), 34 routes registered
 
+- Full-system QA + architecture audit completed (2026-02-18):
+
+  - Tenant isolation across API routes: PASS (no direct cross-tenant read/mutate path found).
+  - HIGH issues found: LIMITED check-in decrement can race below zero; ACTIVE contract selection in check-in is nondeterministic when multiple ACTIVE contracts exist.
+  - MEDIUM issues found: several UI flows (Members/Check-In/Attendance/Sessions) have incomplete network error handling patterns.
+- Attendance HIGH fixes applied (2026-02-18):
+
+  - `POST /api/attendance/check-in` now loads all ACTIVE contracts per `(studio_id, member_id)`, returns `400 no active contract` for 0 and `409 multiple active contracts` for >1.
+  - LIMITED decrement is now concurrency-safe via transactional `updateMany` with `remaining_classes > 0`; if affected rows != 1, request returns `400 no classes left`.
+  - Duplicate check-in idempotency preserved: unique conflict (`P2002`) returns `200 already_checked_in=true` and no decrement is applied.
+- UI robustness fixes applied (2026-02-18):
+
+  - `/check-in` now uses user-provided `studio_id` (localStorage pattern), validates non-OK API responses, and renders nullable coach safely (`coach?.name`).
+  - Members UI (`/members`, `/members/new`, `/members/[id]/edit`) now wraps fetch/submit/deactivate flows in `try/catch/finally` with guaranteed loading/submitting reset and alert on error.
+  - `/sessions/new` now surfaces class-types/coaches loading failures with visible error message + alert.
+
 ## What is in progress
 
 - None.

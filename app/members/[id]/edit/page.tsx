@@ -45,35 +45,41 @@ export default function EditMemberPage() {
 
       setLoading(true);
       setError("");
+      try {
+        const response = await fetch("/api/members", {
+          headers: {
+            "x-studio-id": studioId.trim(),
+          },
+          cache: "no-store",
+        });
 
-      const response = await fetch("/api/members", {
-        headers: {
-          "x-studio-id": studioId.trim(),
-        },
-        cache: "no-store",
-      });
+        const payload = (await response.json()) as { data?: Member[]; message?: string };
+        if (!response.ok) {
+          const message = payload.message ?? "Failed to load member.";
+          setError(message);
+          alert(message);
+          return;
+        }
 
-      const payload = (await response.json()) as { data?: Member[]; message?: string };
-      if (!response.ok) {
-        setError(payload.message ?? "Failed to load member.");
+        const foundMember = payload.data?.find((entry) => entry.id === memberId);
+        if (!foundMember) {
+          setError("Member not found in this studio.");
+          return;
+        }
+
+        setMember(foundMember);
+        setFirstName(foundMember.first_name);
+        setLastName(foundMember.last_name);
+        setEmail(foundMember.email ?? "");
+        setPhone(foundMember.phone ?? "");
+        setStatus(foundMember.status);
+      } catch {
+        const message = "Failed to load member.";
+        setError(message);
+        alert(message);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const foundMember = payload.data?.find((entry) => entry.id === memberId);
-      if (!foundMember) {
-        setError("Member not found in this studio.");
-        setLoading(false);
-        return;
-      }
-
-      setMember(foundMember);
-      setFirstName(foundMember.first_name);
-      setLastName(foundMember.last_name);
-      setEmail(foundMember.email ?? "");
-      setPhone(foundMember.phone ?? "");
-      setStatus(foundMember.status);
-      setLoading(false);
     }
 
     void loadMember();
@@ -89,32 +95,39 @@ export default function EditMemberPage() {
 
     setSubmitting(true);
     setError("");
+    try {
+      const response = await fetch(`/api/members/${memberId}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-studio-id": studioId.trim(),
+        },
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          phone,
+          status,
+        }),
+      });
 
-    const response = await fetch(`/api/members/${memberId}`, {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-        "x-studio-id": studioId.trim(),
-      },
-      body: JSON.stringify({
-        first_name: firstName,
-        last_name: lastName,
-        email,
-        phone,
-        status,
-      }),
-    });
+      const payload = (await response.json()) as { data?: Member; message?: string };
+      if (!response.ok || !payload.data) {
+        const message = payload.message ?? "Failed to update member.";
+        setError(message);
+        alert(message);
+        return;
+      }
 
-    const payload = (await response.json()) as { data?: Member; message?: string };
-    if (!response.ok || !payload.data) {
-      setError(payload.message ?? "Failed to update member.");
+      setMember(payload.data);
+      window.localStorage.setItem("studio_id", studioId.trim());
+    } catch {
+      const message = "Failed to update member.";
+      setError(message);
+      alert(message);
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    setMember(payload.data);
-    window.localStorage.setItem("studio_id", studioId.trim());
-    setSubmitting(false);
   }
 
   async function handleDeactivate() {
@@ -122,24 +135,35 @@ export default function EditMemberPage() {
       setError("x-studio-id required");
       return;
     }
+    setSubmitting(true);
 
-    const response = await fetch(`/api/members/${memberId}/deactivate`, {
-      method: "POST",
-      headers: {
-        "x-studio-id": studioId.trim(),
-      },
-    });
+    try {
+      const response = await fetch(`/api/members/${memberId}/deactivate`, {
+        method: "POST",
+        headers: {
+          "x-studio-id": studioId.trim(),
+        },
+      });
 
-    const payload = (await response.json()) as { data?: Member; message?: string };
-    if (!response.ok || !payload.data) {
-      setError(payload.message ?? "Failed to deactivate member.");
-      return;
+      const payload = (await response.json()) as { data?: Member; message?: string };
+      if (!response.ok || !payload.data) {
+        const message = payload.message ?? "Failed to deactivate member.";
+        setError(message);
+        alert(message);
+        return;
+      }
+
+      setMember(payload.data);
+      setStatus(payload.data.status);
+      window.localStorage.setItem("studio_id", studioId.trim());
+      router.refresh();
+    } catch {
+      const message = "Failed to deactivate member.";
+      setError(message);
+      alert(message);
+    } finally {
+      setSubmitting(false);
     }
-
-    setMember(payload.data);
-    setStatus(payload.data.status);
-    window.localStorage.setItem("studio_id", studioId.trim());
-    router.refresh();
   }
 
   return (
@@ -218,7 +242,11 @@ export default function EditMemberPage() {
           <button type="submit" disabled={submitting || loading}>
             {submitting ? "Saving..." : "Save changes"}
           </button>
-          <button type="button" onClick={() => void handleDeactivate()} disabled={loading}>
+          <button
+            type="button"
+            onClick={() => void handleDeactivate()}
+            disabled={loading || submitting}
+          >
             Deactivate
           </button>
         </div>
