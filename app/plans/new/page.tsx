@@ -69,25 +69,32 @@ export default function NewPlanPage() {
 
     setSubmitting(true);
 
-    const response = await fetch("/api/plans", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-studio-id": studioId.trim(),
-      },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch("/api/plans", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-studio-id": studioId.trim(),
+        },
+        body: JSON.stringify(payload),
+      });
 
-    const result = (await response.json()) as { message?: string };
-    if (!response.ok) {
-      setError(result.message ?? "Failed to create plan.");
+      const result = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setError(result.message ?? "Failed to create plan.");
+        return;
+      }
+
+      window.localStorage.setItem("studio_id", studioId.trim());
+      router.push("/plans");
+      router.refresh();
+    } catch {
+      const message = "Failed to create plan.";
+      setError(message);
+      alert(message);
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    window.localStorage.setItem("studio_id", studioId.trim());
-    router.push("/plans");
-    router.refresh();
   }
 
   return (

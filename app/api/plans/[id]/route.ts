@@ -54,9 +54,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const nextType = parsedBody.data.type ?? existingPlan.type;
     const nextClassLimit =
-      parsedBody.data.class_limit !== undefined
-        ? parsedBody.data.class_limit
-        : existingPlan.class_limit;
+      nextType === "UNLIMITED"
+        ? null
+        : parsedBody.data.class_limit !== undefined
+          ? parsedBody.data.class_limit
+          : existingPlan.class_limit;
 
     const classLimitError = validatePlanTypeClassLimit({
       type: nextType,
@@ -73,10 +75,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       },
       data: {
         ...parsedBody.data,
-        class_limit:
-          nextType === "UNLIMITED"
-            ? null
-            : (parsedBody.data.class_limit ?? existingPlan.class_limit),
+        class_limit: nextClassLimit,
       },
     });
 

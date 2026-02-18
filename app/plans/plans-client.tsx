@@ -54,23 +54,30 @@ export default function PlansClient() {
       query = "?is_active=false";
     }
 
-    const response = await fetch(`/api/plans${query}`, {
-      headers: {
-        "x-studio-id": studioId.trim(),
-      },
-      cache: "no-store",
-    });
+    try {
+      const response = await fetch(`/api/plans${query}`, {
+        headers: {
+          "x-studio-id": studioId.trim(),
+        },
+        cache: "no-store",
+      });
 
-    const payload = (await response.json()) as { data?: Plan[]; message?: string };
-    if (!response.ok) {
+      const payload = (await response.json()) as { data?: Plan[]; message?: string };
+      if (!response.ok) {
+        setPlans([]);
+        setError(payload.message ?? "Failed to load plans.");
+        return;
+      }
+
+      setPlans(payload.data ?? []);
+    } catch {
       setPlans([]);
-      setError(payload.message ?? "Failed to load plans.");
+      const message = "Failed to load plans.";
+      setError(message);
+      alert(message);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setPlans(payload.data ?? []);
-    setLoading(false);
   }, [filter, studioId]);
 
   useEffect(() => {

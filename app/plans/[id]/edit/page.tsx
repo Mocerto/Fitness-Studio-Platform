@@ -59,34 +59,39 @@ export default function EditPlanPage() {
       setLoading(true);
       setError("");
 
-      const response = await fetch("/api/plans", {
-        headers: {
-          "x-studio-id": studioId.trim(),
-        },
-        cache: "no-store",
-      });
+      try {
+        const response = await fetch("/api/plans", {
+          headers: {
+            "x-studio-id": studioId.trim(),
+          },
+          cache: "no-store",
+        });
 
-      const payload = (await response.json()) as { data?: Plan[]; message?: string };
-      if (!response.ok) {
-        setError(payload.message ?? "Failed to load plan.");
+        const payload = (await response.json()) as { data?: Plan[]; message?: string };
+        if (!response.ok) {
+          setError(payload.message ?? "Failed to load plan.");
+          return;
+        }
+
+        const foundPlan = payload.data?.find((entry) => entry.id === planId);
+        if (!foundPlan) {
+          setError("Plan not found in this studio.");
+          return;
+        }
+
+        setName(foundPlan.name);
+        setType(foundPlan.type);
+        setClassLimit(foundPlan.class_limit != null ? String(foundPlan.class_limit) : "");
+        setBillingPeriod(foundPlan.billing_period);
+        setPriceCents(String(foundPlan.price_cents));
+        setIsActive(foundPlan.is_active);
+      } catch {
+        const message = "Failed to load plan.";
+        setError(message);
+        alert(message);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const foundPlan = payload.data?.find((entry) => entry.id === planId);
-      if (!foundPlan) {
-        setError("Plan not found in this studio.");
-        setLoading(false);
-        return;
-      }
-
-      setName(foundPlan.name);
-      setType(foundPlan.type);
-      setClassLimit(foundPlan.class_limit != null ? String(foundPlan.class_limit) : "");
-      setBillingPeriod(foundPlan.billing_period);
-      setPriceCents(String(foundPlan.price_cents));
-      setIsActive(foundPlan.is_active);
-      setLoading(false);
     }
 
     void loadPlan();
@@ -126,26 +131,32 @@ export default function EditPlanPage() {
 
     setSubmitting(true);
 
-    const response = await fetch(`/api/plans/${planId}`, {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-        "x-studio-id": studioId.trim(),
-      },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch(`/api/plans/${planId}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-studio-id": studioId.trim(),
+        },
+        body: JSON.stringify(payload),
+      });
 
-    const result = (await response.json()) as { message?: string };
-    if (!response.ok) {
-      setError(result.message ?? "Failed to update plan.");
+      const result = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setError(result.message ?? "Failed to update plan.");
+        return;
+      }
+
+      window.localStorage.setItem("studio_id", studioId.trim());
+      router.push("/plans");
+      router.refresh();
+    } catch {
+      const message = "Failed to update plan.";
+      setError(message);
+      alert(message);
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    setSubmitting(false);
-    window.localStorage.setItem("studio_id", studioId.trim());
-    router.push("/plans");
-    router.refresh();
   }
 
   async function handleDeactivate() {
@@ -156,20 +167,30 @@ export default function EditPlanPage() {
       return;
     }
 
-    const response = await fetch(`/api/plans/${planId}/deactivate`, {
-      method: "POST",
-      headers: {
-        "x-studio-id": studioId.trim(),
-      },
-    });
+    setSubmitting(true);
 
-    const result = (await response.json()) as { message?: string };
-    if (!response.ok) {
-      setError(result.message ?? "Failed to deactivate plan.");
-      return;
+    try {
+      const response = await fetch(`/api/plans/${planId}/deactivate`, {
+        method: "POST",
+        headers: {
+          "x-studio-id": studioId.trim(),
+        },
+      });
+
+      const result = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setError(result.message ?? "Failed to deactivate plan.");
+        return;
+      }
+
+      setIsActive(false);
+    } catch {
+      const message = "Failed to deactivate plan.";
+      setError(message);
+      alert(message);
+    } finally {
+      setSubmitting(false);
     }
-
-    setIsActive(false);
   }
 
   return (

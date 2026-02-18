@@ -10,7 +10,7 @@ Phase 1: ERP Core (B2B Admin)
 
 ## Current task (one sentence)
 
-Implement Contracts (create + list) with plan snapshots.
+Implement Payments (manual recording + list per contract/member).
 
 ## What is done
 
@@ -45,10 +45,23 @@ Implement Contracts (create + list) with plan snapshots.
   - `/plans/[id]/edit` update + deactivate
 - Added `lib/plan-validation.ts` with conditional rules for `type` and `class_limit`.
 - Verified app compiles with Plans module (`npm run build`).
+- QA audit of Plans module completed (2026-02-17).
+- Plans QA bugs fixed (MEDIUM):
+  - `PATCH /api/plans/:id` LIMITED -> UNLIMITED transition now forces merged `nextClassLimit = null` before validation.
+  - Plans UI fetch calls now use try/catch and always reset loading/submitting in finally.
+- Implemented Contracts module with tenant isolation, plan snapshots, and correct `remaining_classes` init:
+  - `GET /api/contracts` — list with optional `status` + `member_id` filters, includes member + plan relations
+  - `POST /api/contracts` — validates member/plan ownership, enforces LIMITED class_limit sanity, sets snapshots
+  - `POST /api/contracts/:id/pause` — ACTIVE-only guard, sets paused_from=today, optional paused_until
+  - `POST /api/contracts/:id/cancel` — non-CANCELLED guard, sets end_date=today if unset
+  - Added `lib/contract-validation.ts` (Zod schemas for create, pause, query params)
+  - Minimal UI: `/contracts` list (status + member_id filters, inline pause/cancel buttons), `/contracts/new` create form
+  - All UI fetch calls use try/catch + finally (pattern consistent with QA fixes)
+  - Verified app compiles cleanly (`npm run build`), 12 routes registered
 
 ## What is in progress
 
-- Preparing Contracts implementation scope (create + list with plan snapshots).
+- Planning Payments (manual recording + list).
 
 ## Blockers / Questions
 
@@ -57,7 +70,7 @@ Implement Contracts (create + list) with plan snapshots.
 
 ## Next exact step (copy-pastable)
 
-- Implement Contracts (create + list) with plan snapshots.
+- Implement Payments (manual recording: POST /api/payments, list: GET /api/payments with member_id/contract_id filters).
 
 ## Definition of Done for current task
 
