@@ -1,4 +1,4 @@
-# STATE
+#   STATE
 
 ## Current goal
 
@@ -10,7 +10,7 @@ Phase 1: ERP Core (B2B Admin)
 
 ## Current task (one sentence)
 
-Implement Payments (manual recording + list per contract/member).
+Add basic analytics dashboard (revenue + attendance).
 
 ## What is done
 
@@ -24,22 +24,26 @@ Implement Payments (manual recording + list per contract/member).
 - Created and applied initial migration successfully: `prisma/migrations/20260218034221_init/migration.sql`.
 - Cleaned `.gitignore` to exclude local/build/cache artifacts (kept Prisma migrations tracked).
 - Implemented Members API routes with tenant isolation and zod validation:
+
   - `GET /api/members`
   - `POST /api/members`
   - `PATCH /api/members/:id`
   - `POST /api/members/:id/deactivate`
 - Added minimal Members UI pages:
+
   - `/members` list + status filter
   - `/members/new` create form
   - `/members/[id]/edit` update + deactivate
 - Added Prisma singleton helper in `lib/prisma.ts` and configured Prisma v7 PostgreSQL adapter.
 - Verified app compile/build (`npm run build`) and dev runtime startup for Members routes/pages.
 - Implemented Plans API routes with tenant isolation and zod validation:
+
   - `GET /api/plans`
   - `POST /api/plans`
   - `PATCH /api/plans/:id`
   - `POST /api/plans/:id/deactivate`
 - Added minimal Plans UI pages:
+
   - `/plans` list + active filter
   - `/plans/new` create form
   - `/plans/[id]/edit` update + deactivate
@@ -47,9 +51,11 @@ Implement Payments (manual recording + list per contract/member).
 - Verified app compiles with Plans module (`npm run build`).
 - QA audit of Plans module completed (2026-02-17).
 - Plans QA bugs fixed (MEDIUM):
+
   - `PATCH /api/plans/:id` LIMITED -> UNLIMITED transition now forces merged `nextClassLimit = null` before validation.
   - Plans UI fetch calls now use try/catch and always reset loading/submitting in finally.
 - Implemented Contracts module with tenant isolation, plan snapshots, and correct `remaining_classes` init:
+
   - `GET /api/contracts` — list with optional `status` + `member_id` filters, includes member + plan relations
   - `POST /api/contracts` — validates member/plan ownership, enforces LIMITED class_limit sanity, sets snapshots
   - `POST /api/contracts/:id/pause` — ACTIVE-only guard, sets paused_from=today, optional paused_until
@@ -58,10 +64,50 @@ Implement Payments (manual recording + list per contract/member).
   - Minimal UI: `/contracts` list (status + member_id filters, inline pause/cancel buttons), `/contracts/new` create form
   - All UI fetch calls use try/catch + finally (pattern consistent with QA fixes)
   - Verified app compiles cleanly (`npm run build`), 12 routes registered
+- Implemented Payments module with tenant isolation and member/contract cross-validation:
+
+  - `GET /api/payments` — list with optional filters: status, member_id, contract_id, from/to (paid_at range); includes member + contract info
+  - `POST /api/payments` — verifies member ownership, verifies contract ownership + contract.member_id matches; defaults currency=USD, status=RECORDED, paid_at=now
+  - Added `lib/payment-validation.ts` (Zod schemas: createPaymentSchema, paymentMethodSchema, paymentStatusSchema, isoDateStringSchema, uuidSchema, paymentListQuerySchema)
+  - Minimal UI: `/payments` list (status/member_id/contract_id/from-to filters), `/payments/new` create form with live member dropdown + contract dropdown (fetched per member)
+  - Amount entered in dollars, converted to cents on submit; displayed as formatted currency in list
+  - All fetch calls use try/catch + finally pattern
+  - Verified app compiles cleanly (`npm run build`), 22 routes registered
+- QA audit of Payments module completed (2026-02-18):
+
+  - Tenant isolation checks: PASS (no cross-tenant read/create path found).
+  - No HIGH issues found.
+  - Found MEDIUM issues in date validation and paid_at input validation (details in QA report).
+- Payments QA MEDIUM fixes applied:
+
+  - `GET /api/payments`: `from`/`to` Date objects now checked with `Number.isNaN(date.getTime())` after construction; invalid calendar dates (e.g. Feb 30) return 400 instead of 500.
+  - `POST /api/payments`: `paid_at` validated with `Number.isNaN` before `prisma.payment.create`; invalid strings return 400 instead of a Prisma runtime crash.
+  - `/payments/new` UI: replaced `parseFloat + Math.round` with integer-only `dollarsToCents()` helper (splits on `.`, rejects >2 decimal places, no floating-point arithmetic).
+- Implemented Sessions module with tenant isolation, class_type/coach cross-validation, and cancel transition:
+
+  - `GET /api/class-types` — read-only, tenant-scoped, active only, ordered by name (supports session dropdowns)
+  - `GET /api/coaches` — read-only, tenant-scoped, active only, ordered by name (supports session dropdowns)
+  - `GET /api/sessions` — list with optional filters: status, class_type_id, coach_id, from/to (starts_at range, NaN-guarded); ordered starts_at ASC; includes class_type + coach
+  - `POST /api/sessions` — verifies class_type + coach ownership; validates ends_at > starts_at; defaults status=SCHEDULED
+  - `PATCH /api/sessions/:id` — tenant-safe; re-verifies class_type/coach on change; merges starts_at/ends_at and validates ordering before write
+  - `POST /api/sessions/:id/cancel` — SCHEDULED-only guard (rejects already-CANCELLED); updateMany with studio_id in WHERE
+  - Added `lib/session-validation.ts` (isoDateTimeSchema via superRefine NaN check, createSessionSchema, updateSessionSchema, sessionListQuerySchema)
+  - Minimal UI: `/sessions` list (status/from-to filters, inline Cancel button disabled for already-cancelled), `/sessions/new` create form with live class-type + coach dropdowns, capacity auto-filled from class type default
+  - Nav updated: Contracts, Payments, Sessions added to layout header
+  - Verified app compiles cleanly (`npm run build`), 29 routes registered
+- Implemented Attendance Check-in MVP with tenant isolation, contract validation, and atomic transactions:
+
+  - `GET /api/attendance` — list with optional filters: status, session_id, member_id; ordered created_at DESC; includes member + session.class_type
+  - `POST /api/attendance/check-in` — verifies session (not CANCELLED), member (ACTIVE), ACTIVE contract; for LIMITED plans checks remaining_classes > 0; `prisma.$transaction` atomically creates attendance + decrements remaining_classes; P2002 unique constraint catch returns 200 with `already_checked_in: true` (idempotent)
+  - `POST /api/attendance/:id/cancel` — tenant-safe; rejects already-CANCELLED; `updateMany` with studio_id in WHERE; MVP: does NOT restore remaining_classes (documented in code)
+  - Added `lib/attendance-validation.ts` (attendanceStatusSchema, uuidSchema, checkInSchema, attendanceIdParamSchema, attendanceListQuerySchema)
+  - Minimal UI: `/check-in` — session dropdown (SCHEDULED only), ACTIVE member list with name search, per-member check-in button with in-flight + already-checked-in state; `/attendance` list with status/session_id/member_id filters + inline Cancel button
+  - Nav updated: Check-In, Attendance added to layout header
+  - Verified app compiles cleanly (`npm run build`), 34 routes registered
 
 ## What is in progress
 
-- Planning Payments (manual recording + list).
+- None.
 
 ## Blockers / Questions
 
@@ -70,7 +116,7 @@ Implement Payments (manual recording + list per contract/member).
 
 ## Next exact step (copy-pastable)
 
-- Implement Payments (manual recording: POST /api/payments, list: GET /api/payments with member_id/contract_id filters).
+- Add basic analytics dashboard (revenue + attendance).
 
 ## Definition of Done for current task
 
