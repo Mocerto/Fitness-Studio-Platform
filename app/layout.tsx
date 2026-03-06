@@ -31,6 +31,10 @@ export default async function RootLayout({
             <Link href="/sessions">Sessions</Link>
             <Link href="/check-in">Check-In</Link>
             <Link href="/attendance">Attendance</Link>
+            <Link href="/products">Products</Link>
+            <Link href="/inventory">Inventory</Link>
+            <Link href="/expenses">Expenses</Link>
+            <Link href="/leads">Leads</Link>
 
             {session?.user && (
               <>

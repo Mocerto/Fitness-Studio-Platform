@@ -54,10 +54,47 @@ enum PaymentMethod {
   OTHER
 }
 
+enum PaymentType {
+  CONTRACT
+  PRODUCT_SALE
+  OTHER
+}
+
 enum PaymentStatus {
   RECORDED
   REFUNDED
   VOID
+}
+
+enum InventoryTransactionType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+}
+
+enum ExpenseStatus {
+  RECORDED
+  VOID
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  TRIAL_SCHEDULED
+  TRIAL_COMPLETED
+  NEGOTIATING
+  CONVERTED
+  LOST
+}
+
+enum LeadSource {
+  WALK_IN
+  REFERRAL
+  SOCIAL_MEDIA
+  WEBSITE
+  PHONE
+  OTHER
 }
 
 model Studio {
@@ -67,15 +104,23 @@ model Studio {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  users       User[]
-  members     Member[]
-  coaches     Coach[]
-  class_types ClassType[]
-  plans       Plan[]
-  contracts   Contract[]
-  sessions    Session[]
-  attendance  Attendance[]
-  payments    Payment[]
+  users                  User[]
+  members                Member[]
+  coaches                Coach[]
+  class_types            ClassType[]
+  plans                  Plan[]
+  contracts              Contract[]
+  sessions               Session[]
+  attendance             Attendance[]
+  payments               Payment[]
+  product_categories     ProductCategory[]
+  products               Product[]
+  inventory_transactions InventoryTransaction[]
+  expense_categories     ExpenseCategory[]
+  expenses               Expense[]
+  disciplines            Discipline[]
+  coach_disciplines      CoachDiscipline[]
+  leads                  Lead[]
 
   @@map("studios")
 }
@@ -92,9 +137,11 @@ model User {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  studio            Studio    @relation(fields: [studio_id], references: [id])
-  coaches           Coach[]
-  recorded_payments Payment[]
+  studio                          Studio                 @relation(fields: [studio_id], references: [id])
+  coaches                         Coach[]
+  recorded_payments               Payment[]
+  recorded_inventory_transactions InventoryTransaction[]
+  recorded_expenses               Expense[]
 
   @@unique([studio_id, email])
   @@unique([studio_id, id])
@@ -133,9 +180,10 @@ model Coach {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  studio   Studio    @relation(fields: [studio_id], references: [id])
-  user     User?     @relation(fields: [studio_id, user_id], references: [studio_id, id])
-  sessions Session[]
+  studio      Studio             @relation(fields: [studio_id], references: [id])
+  user        User?              @relation(fields: [studio_id, user_id], references: [studio_id, id])
+  sessions    Session[]
+  disciplines CoachDiscipline[]
 
   @@unique([studio_id, user_id])
   @@unique([studio_id, id])
@@ -145,6 +193,7 @@ model Coach {
 model ClassType {
   id               String  @id @default(uuid()) @db.Uuid
   studio_id        String  @db.Uuid
+  discipline_id    String? @db.Uuid
   name             String
   default_capacity Int?
   duration_minutes Int?
@@ -153,8 +202,9 @@ model ClassType {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  studio   Studio    @relation(fields: [studio_id], references: [id])
-  sessions Session[]
+  studio     Studio      @relation(fields: [studio_id], references: [id])
+  discipline Discipline? @relation(fields: [studio_id, discipline_id], references: [studio_id, id])
+  sessions   Session[]
 
   @@unique([studio_id, name])
   @@unique([studio_id, id])
@@ -183,18 +233,20 @@ model Plan {
 }
 
 model Contract {
-  id                   String         @id @default(uuid()) @db.Uuid
-  studio_id            String         @db.Uuid
-  member_id            String         @db.Uuid
-  plan_id              String         @db.Uuid
-  status               ContractStatus
-  plan_type_snapshot   PlanType
-  class_limit_snapshot Int?
-  remaining_classes    Int?
-  start_date           DateTime       @db.Date
-  end_date             DateTime?      @db.Date
-  paused_from          DateTime?      @db.Date
-  paused_until         DateTime?      @db.Date
+  id                     String         @id @default(uuid()) @db.Uuid
+  studio_id              String         @db.Uuid
+  member_id              String         @db.Uuid
+  plan_id                String         @db.Uuid
+  status                 ContractStatus
+  plan_type_snapshot     PlanType
+  billing_period_snapshot BillingPeriod
+  class_limit_snapshot   Int?
+  remaining_classes      Int?
+  start_date             DateTime       @db.Date
+  end_date               DateTime?      @db.Date
+  next_billing_date      DateTime?      @db.Date
+  paused_from            DateTime?      @db.Date
+  paused_until           DateTime?      @db.Date
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -260,7 +312,10 @@ model Payment {
   id                  String        @id @default(uuid()) @db.Uuid
   studio_id           String        @db.Uuid
   member_id           String        @db.Uuid
+  payment_type        PaymentType   @default(CONTRACT)
   contract_id         String?       @db.Uuid
+  product_id          String?       @db.Uuid
+  product_qty         Int?
   amount_cents        Int
   currency            String
   method              PaymentMethod
@@ -275,10 +330,186 @@ model Payment {
   studio           Studio    @relation(fields: [studio_id], references: [id])
   member           Member    @relation(fields: [studio_id, member_id], references: [studio_id, id])
   contract         Contract? @relation(fields: [studio_id, contract_id], references: [studio_id, id])
+  product          Product?  @relation(fields: [studio_id, product_id], references: [studio_id, id])
   recorded_by_user User?     @relation(fields: [studio_id, recorded_by_user_id], references: [studio_id, id])
 
   @@index([studio_id, paid_at])
   @@index([studio_id, member_id, paid_at])
   @@index([studio_id, contract_id])
+  @@index([studio_id, payment_type])
   @@map("payments")
+}
+
+model ProductCategory {
+  id        String  @id @default(uuid()) @db.Uuid
+  studio_id String  @db.Uuid
+  name      String
+  is_active Boolean @default(true)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studio   Studio    @relation(fields: [studio_id], references: [id])
+  products Product[]
+
+  @@unique([studio_id, name])
+  @@unique([studio_id, id])
+  @@map("product_categories")
+}
+
+model Product {
+  id                  String  @id @default(uuid()) @db.Uuid
+  studio_id           String  @db.Uuid
+  category_id         String? @db.Uuid
+  name                String
+  description         String?
+  sku                 String?
+  price_cents         Int
+  cost_cents          Int?
+  current_stock       Int     @default(0)
+  low_stock_threshold Int?
+  is_active           Boolean @default(true)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studio                 Studio                 @relation(fields: [studio_id], references: [id])
+  category               ProductCategory?       @relation(fields: [studio_id, category_id], references: [studio_id, id])
+  inventory_transactions InventoryTransaction[]
+  payments               Payment[]
+
+  @@unique([studio_id, sku])
+  @@unique([studio_id, id])
+  @@index([studio_id, category_id])
+  @@index([studio_id, is_active])
+  @@map("products")
+}
+
+model InventoryTransaction {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  studio_id           String                   @db.Uuid
+  product_id          String                   @db.Uuid
+  type                InventoryTransactionType
+  quantity            Int
+  unit_cost_cents     Int?
+  note                String?
+  recorded_by_user_id String?                  @db.Uuid
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studio           Studio  @relation(fields: [studio_id], references: [id])
+  product          Product @relation(fields: [studio_id, product_id], references: [studio_id, id])
+  recorded_by_user User?   @relation(fields: [studio_id, recorded_by_user_id], references: [studio_id, id])
+
+  @@index([studio_id, product_id, created_at])
+  @@index([studio_id, type])
+  @@map("inventory_transactions")
+}
+
+model ExpenseCategory {
+  id        String  @id @default(uuid()) @db.Uuid
+  studio_id String  @db.Uuid
+  name      String
+  is_active Boolean @default(true)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studio   Studio    @relation(fields: [studio_id], references: [id])
+  expenses Expense[]
+
+  @@unique([studio_id, name])
+  @@unique([studio_id, id])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id                  String        @id @default(uuid()) @db.Uuid
+  studio_id           String        @db.Uuid
+  category_id         String?       @db.Uuid
+  description         String
+  amount_cents        Int
+  currency            String        @default("USD")
+  method              PaymentMethod
+  status              ExpenseStatus @default(RECORDED)
+  expense_date        DateTime      @db.Date
+  vendor              String?
+  receipt_url         String?
+  recorded_by_user_id String?       @db.Uuid
+  note                String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studio           Studio           @relation(fields: [studio_id], references: [id])
+  category         ExpenseCategory? @relation(fields: [studio_id, category_id], references: [studio_id, id])
+  recorded_by_user User?            @relation(fields: [studio_id, recorded_by_user_id], references: [studio_id, id])
+
+  @@unique([studio_id, id])
+  @@index([studio_id, expense_date])
+  @@index([studio_id, category_id])
+  @@index([studio_id, status])
+  @@map("expenses")
+}
+
+model Discipline {
+  id        String  @id @default(uuid()) @db.Uuid
+  studio_id String  @db.Uuid
+  name      String
+  is_active Boolean @default(true)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studio      Studio             @relation(fields: [studio_id], references: [id])
+  class_types ClassType[]
+  coaches     CoachDiscipline[]
+
+  @@unique([studio_id, name])
+  @@unique([studio_id, id])
+  @@map("disciplines")
+}
+
+model CoachDiscipline {
+  id            String @id @default(uuid()) @db.Uuid
+  studio_id     String @db.Uuid
+  coach_id      String @db.Uuid
+  discipline_id String @db.Uuid
+
+  created_at DateTime @default(now())
+
+  studio     Studio     @relation(fields: [studio_id], references: [id])
+  coach      Coach      @relation(fields: [studio_id, coach_id], references: [studio_id, id])
+  discipline Discipline @relation(fields: [studio_id, discipline_id], references: [studio_id, id])
+
+  @@unique([studio_id, coach_id, discipline_id])
+  @@index([studio_id, discipline_id])
+  @@map("coach_disciplines")
+}
+
+model Lead {
+  id                  String     @id @default(uuid()) @db.Uuid
+  studio_id           String     @db.Uuid
+  first_name          String
+  last_name           String
+  email               String?
+  phone               String?
+  source              LeadSource
+  status              LeadStatus @default(NEW)
+  interested_in       String?
+  notes               String?
+  converted_member_id String?    @db.Uuid
+  last_contacted_at   DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studio Studio @relation(fields: [studio_id], references: [id])
+
+  @@unique([studio_id, id])
+  @@index([studio_id, status])
+  @@index([studio_id, source])
+  @@index([studio_id, created_at])
+  @@map("leads")
 }

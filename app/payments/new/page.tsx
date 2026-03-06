@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type PaymentMethod = "CASH" | "CARD" | "BANK_TRANSFER" | "OTHER";
 type PaymentStatus = "RECORDED" | "REFUNDED" | "VOID";
+type PaymentType = "CONTRACT" | "PRODUCT_SALE" | "OTHER";
 
 type Member = {
   id: string;
@@ -21,20 +22,15 @@ type ContractOption = {
   plan: { name: string; type: string };
 };
 
-type CreatePaymentPayload = {
-  member_id: string;
-  contract_id?: string;
-  amount_cents: number;
-  currency: string;
-  method: PaymentMethod;
-  status: PaymentStatus;
-  paid_at?: string;
-  note?: string;
+type ProductOption = {
+  id: string;
+  name: string;
+  sku: string | null;
+  price_cents: number;
+  current_stock: number;
 };
 
 // Converts a dollar string to integer cents without floating-point arithmetic.
-// Accepts "49.99" → 4999, "10" → 1000, "1.5" → 150.
-// Returns null if more than 2 decimal places or non-numeric.
 function dollarsToCents(dollars: string): number | null {
   const parts = dollars.trim().split(".");
   if (parts.length > 2) return null;
@@ -52,10 +48,16 @@ export default function NewPaymentPage() {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
-  const [selectedMemberId, setSelectedMemberId] = useState("");
   const [contracts, setContracts] = useState<ContractOption[]>([]);
   const [contractsLoading, setContractsLoading] = useState(false);
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+
+  const [paymentType, setPaymentType] = useState<PaymentType>("CONTRACT");
+  const [selectedMemberId, setSelectedMemberId] = useState("");
   const [selectedContractId, setSelectedContractId] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [productQty, setProductQty] = useState(1);
   const [amountDollars, setAmountDollars] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [status, setStatus] = useState<PaymentStatus>("RECORDED");
@@ -69,11 +71,10 @@ export default function NewPaymentPage() {
     setPaidAt(new Date().toISOString().split("T")[0] ?? "");
   }, []);
 
-  // Fetch members whenever studioId becomes available
+  // Fetch members
   useEffect(() => {
     if (!studioId) {
       setMembers([]);
-      setSelectedMemberId("");
       return;
     }
 
@@ -81,15 +82,9 @@ export default function NewPaymentPage() {
 
     void (async () => {
       try {
-        const response = await fetch("/api/members", {
-          cache: "no-store",
-        });
-        const payload = (await response.json()) as { data?: Member[]; message?: string };
-        if (response.ok) {
-          setMembers(payload.data ?? []);
-        } else {
-          setMembers([]);
-        }
+        const response = await fetch("/api/members", { cache: "no-store" });
+        const payload = (await response.json()) as { data?: Member[] };
+        setMembers(response.ok ? payload.data ?? [] : []);
       } catch {
         setMembers([]);
       } finally {
@@ -103,9 +98,7 @@ export default function NewPaymentPage() {
     setContracts([]);
     setSelectedContractId("");
 
-    if (!studioId || !selectedMemberId) {
-      return;
-    }
+    if (!studioId || !selectedMemberId || paymentType !== "CONTRACT") return;
 
     setContractsLoading(true);
 
@@ -113,26 +106,62 @@ export default function NewPaymentPage() {
       try {
         const response = await fetch(
           `/api/contracts?member_id=${encodeURIComponent(selectedMemberId)}`,
-          {
-            cache: "no-store",
-          },
+          { cache: "no-store" },
         );
-        const payload = (await response.json()) as {
-          data?: ContractOption[];
-          message?: string;
-        };
-        if (response.ok) {
-          setContracts(payload.data ?? []);
-        } else {
-          setContracts([]);
-        }
+        const payload = (await response.json()) as { data?: ContractOption[] };
+        setContracts(response.ok ? payload.data ?? [] : []);
       } catch {
         setContracts([]);
       } finally {
         setContractsLoading(false);
       }
     })();
-  }, [studioId, selectedMemberId]);
+  }, [studioId, selectedMemberId, paymentType]);
+
+  // Fetch products
+  const fetchProducts = useCallback(async () => {
+    if (!studioId || paymentType !== "PRODUCT_SALE") {
+      setProducts([]);
+      return;
+    }
+
+    setProductsLoading(true);
+
+    try {
+      const response = await fetch("/api/products?active=true", { cache: "no-store" });
+      const payload = (await response.json()) as { data?: ProductOption[] };
+      setProducts(response.ok ? payload.data ?? [] : []);
+    } catch {
+      setProducts([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  }, [studioId, paymentType]);
+
+  useEffect(() => {
+    void fetchProducts();
+  }, [fetchProducts]);
+
+  // Auto-fill amount when product is selected
+  useEffect(() => {
+    if (paymentType === "PRODUCT_SALE" && selectedProductId) {
+      const product = products.find((p) => p.id === selectedProductId);
+      if (product) {
+        const total = (product.price_cents * productQty) / 100;
+        setAmountDollars(total.toFixed(2));
+      }
+    }
+  }, [selectedProductId, productQty, products, paymentType]);
+
+  // Reset type-specific fields when payment type changes
+  useEffect(() => {
+    setSelectedContractId("");
+    setSelectedProductId("");
+    setProductQty(1);
+    setAmountDollars("");
+  }, [paymentType]);
+
+  const selectedProduct = products.find((p) => p.id === selectedProductId);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -143,46 +172,41 @@ export default function NewPaymentPage() {
       return;
     }
     if (!selectedMemberId) {
-      setError("member is required");
+      setError("Member is required");
       return;
     }
 
     const amount_cents = dollarsToCents(amountDollars);
-    if (amount_cents === null) {
-      setError("amount must be a number with up to 2 decimal places (e.g. 49.99)");
-      return;
-    }
-    if (amount_cents <= 0) {
-      setError("amount must be greater than zero");
+    if (amount_cents === null || amount_cents <= 0) {
+      setError("Amount must be a positive number with up to 2 decimal places.");
       return;
     }
 
-    const payload: CreatePaymentPayload = {
+    const payload: Record<string, unknown> = {
       member_id: selectedMemberId,
+      payment_type: paymentType,
       amount_cents,
       currency: "USD",
       method,
       status,
     };
 
-    if (selectedContractId) {
+    if (paymentType === "CONTRACT" && selectedContractId) {
       payload.contract_id = selectedContractId;
     }
-    if (paidAt) {
-      payload.paid_at = paidAt;
+    if (paymentType === "PRODUCT_SALE") {
+      payload.product_id = selectedProductId;
+      payload.product_qty = productQty;
     }
-    if (note.trim()) {
-      payload.note = note.trim();
-    }
+    if (paidAt) payload.paid_at = paidAt;
+    if (note.trim()) payload.note = note.trim();
 
     setSubmitting(true);
 
     try {
       const response = await fetch("/api/payments", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -210,6 +234,18 @@ export default function NewPaymentPage() {
 
       <form className="stack" onSubmit={handleSubmit}>
         <label>
+          Payment type
+          <select
+            value={paymentType}
+            onChange={(e) => setPaymentType(e.target.value as PaymentType)}
+          >
+            <option value="CONTRACT">Contract payment</option>
+            <option value="PRODUCT_SALE">Product sale</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </label>
+
+        <label>
           Member
           <select
             value={selectedMemberId}
@@ -228,23 +264,68 @@ export default function NewPaymentPage() {
           </select>
         </label>
 
-        <label>
-          Contract (optional)
-          <select
-            value={selectedContractId}
-            onChange={(e) => setSelectedContractId(e.target.value)}
-            disabled={contractsLoading || !selectedMemberId}
-          >
-            <option value="">
-              {contractsLoading ? "Loading contracts..." : "— none —"}
-            </option>
-            {contracts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.plan.name} · starts {new Date(c.start_date).toLocaleDateString()} · {c.status}
+        {paymentType === "CONTRACT" && (
+          <label>
+            Contract (optional)
+            <select
+              value={selectedContractId}
+              onChange={(e) => setSelectedContractId(e.target.value)}
+              disabled={contractsLoading || !selectedMemberId}
+            >
+              <option value="">
+                {contractsLoading ? "Loading contracts..." : "— none —"}
               </option>
-            ))}
-          </select>
-        </label>
+              {contracts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.plan.name} · starts {new Date(c.start_date).toLocaleDateString()} · {c.status}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {paymentType === "PRODUCT_SALE" && (
+          <>
+            <label>
+              Product
+              <select
+                value={selectedProductId}
+                onChange={(e) => setSelectedProductId(e.target.value)}
+                required
+                disabled={productsLoading}
+              >
+                <option value="">
+                  {productsLoading ? "Loading products..." : "— select product —"}
+                </option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.sku ? ` (${p.sku})` : ""} — ${(p.price_cents / 100).toFixed(2)} — Stock:{" "}
+                    {p.current_stock}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Quantity
+              <input
+                type="number"
+                min="1"
+                max={selectedProduct?.current_stock ?? 999}
+                value={productQty}
+                onChange={(e) => setProductQty(parseInt(e.target.value || "1", 10))}
+                required
+              />
+            </label>
+
+            {selectedProduct && (
+              <p>
+                Available stock: <strong>{selectedProduct.current_stock}</strong>
+              </p>
+            )}
+          </>
+        )}
 
         <label>
           Amount ($)
@@ -262,29 +343,25 @@ export default function NewPaymentPage() {
         <label>
           Method
           <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
-            <option value="CASH">CASH</option>
-            <option value="CARD">CARD</option>
-            <option value="BANK_TRANSFER">BANK_TRANSFER</option>
-            <option value="OTHER">OTHER</option>
+            <option value="CASH">Cash</option>
+            <option value="CARD">Card</option>
+            <option value="BANK_TRANSFER">Bank transfer</option>
+            <option value="OTHER">Other</option>
           </select>
         </label>
 
         <label>
           Status
           <select value={status} onChange={(e) => setStatus(e.target.value as PaymentStatus)}>
-            <option value="RECORDED">RECORDED</option>
-            <option value="REFUNDED">REFUNDED</option>
-            <option value="VOID">VOID</option>
+            <option value="RECORDED">Recorded</option>
+            <option value="REFUNDED">Refunded</option>
+            <option value="VOID">Void</option>
           </select>
         </label>
 
         <label>
           Paid at
-          <input
-            type="date"
-            value={paidAt}
-            onChange={(e) => setPaidAt(e.target.value)}
-          />
+          <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
         </label>
 
         <label>

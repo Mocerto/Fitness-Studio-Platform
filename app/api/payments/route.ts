@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PaymentStatus, Prisma } from "@prisma/client";
+import { PaymentStatus, PaymentType, Prisma } from "@prisma/client";
 
 import {
   createPaymentSchema,
   isoDateStringSchema,
   paymentStatusSchema,
+  paymentTypeSchema,
   uuidSchema,
 } from "@/lib/payment-validation";
 import { prisma } from "@/lib/prisma";
 import { getStudioId, missingStudioHeaderResponse } from "@/lib/tenant";
+import { auth } from "@/auth";
 
 export async function GET(request: NextRequest) {
   const studioId = await getStudioId();
@@ -30,6 +32,20 @@ export async function GET(request: NextRequest) {
       );
     }
     statusFilter = { status: parsed.data };
+  }
+
+  // --- payment_type filter ---
+  let typeFilter: { payment_type?: PaymentType } = {};
+  const typeQuery = params.get("payment_type");
+  if (typeQuery) {
+    const parsed = paymentTypeSchema.safeParse(typeQuery);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { message: "invalid payment_type query, expected: CONTRACT, PRODUCT_SALE, OTHER" },
+        { status: 400 },
+      );
+    }
+    typeFilter = { payment_type: parsed.data };
   }
 
   // --- member_id filter ---
@@ -115,6 +131,7 @@ export async function GET(request: NextRequest) {
       where: {
         studio_id: studioId,
         ...statusFilter,
+        ...typeFilter,
         ...memberIdFilter,
         ...contractIdFilter,
         ...paidAtFilter,
@@ -122,6 +139,7 @@ export async function GET(request: NextRequest) {
       include: {
         member: { select: { id: true, first_name: true, last_name: true } },
         contract: { select: { id: true, status: true } },
+        product: { select: { id: true, name: true, sku: true } },
       },
       orderBy: { paid_at: "desc" },
     });
@@ -138,6 +156,9 @@ export async function POST(request: NextRequest) {
     return missingStudioHeaderResponse();
   }
 
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -153,8 +174,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { member_id, contract_id, amount_cents, currency, method, status, paid_at, note } =
-    parsedBody.data;
+  const {
+    member_id,
+    payment_type,
+    contract_id,
+    product_id,
+    product_qty,
+    amount_cents,
+    currency,
+    method,
+    status,
+    paid_at,
+    note,
+  } = parsedBody.data;
 
   try {
     // Verify member belongs to this studio
@@ -194,17 +226,83 @@ export async function POST(request: NextRequest) {
       paidAtDate = new Date();
     }
 
+    // For product sales, verify product and decrement stock in a transaction
+    if (payment_type === PaymentType.PRODUCT_SALE && product_id && product_qty) {
+      const result = await prisma.$transaction(async (tx) => {
+        const product = await tx.product.findUnique({
+          where: { studio_id_id: { studio_id: studioId, id: product_id } },
+        });
+
+        if (!product) {
+          throw new Error("PRODUCT_NOT_FOUND");
+        }
+
+        if (product.current_stock < product_qty) {
+          throw new Error("INSUFFICIENT_STOCK");
+        }
+
+        // Create payment
+        const payment = await tx.payment.create({
+          data: {
+            studio_id: studioId,
+            member_id,
+            payment_type,
+            contract_id: null,
+            product_id,
+            product_qty,
+            amount_cents,
+            currency,
+            method,
+            status,
+            paid_at: paidAtDate,
+            recorded_by_user_id: userId,
+            note: note ?? null,
+          },
+          include: {
+            member: { select: { id: true, first_name: true, last_name: true } },
+            product: { select: { id: true, name: true, sku: true } },
+          },
+        });
+
+        // Decrement product stock
+        await tx.product.update({
+          where: { studio_id_id: { studio_id: studioId, id: product_id } },
+          data: { current_stock: { decrement: product_qty } },
+        });
+
+        // Record inventory transaction
+        await tx.inventoryTransaction.create({
+          data: {
+            studio_id: studioId,
+            product_id,
+            type: "SALE",
+            quantity: product_qty,
+            recorded_by_user_id: userId,
+            note: `Payment ${payment.id}`,
+          },
+        });
+
+        return payment;
+      });
+
+      return NextResponse.json({ data: result }, { status: 201 });
+    }
+
+    // Non-product payment (contract or other)
     const payment = await prisma.payment.create({
       data: {
         studio_id: studioId,
         member_id,
+        payment_type,
         contract_id: contract_id ?? null,
+        product_id: null,
+        product_qty: null,
         amount_cents,
         currency,
         method,
         status,
         paid_at: paidAtDate,
-        recorded_by_user_id: null,
+        recorded_by_user_id: userId,
         note: note ?? null,
       },
       include: {
@@ -215,6 +313,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: payment }, { status: 201 });
   } catch (error: unknown) {
+    if (error instanceof Error && error.message === "PRODUCT_NOT_FOUND") {
+      return NextResponse.json({ message: "product not found" }, { status: 404 });
+    }
+    if (error instanceof Error && error.message === "INSUFFICIENT_STOCK") {
+      return NextResponse.json({ message: "insufficient stock for this product" }, { status: 400 });
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
       return NextResponse.json(
         { message: "invalid studio_id, member_id, or contract_id" },

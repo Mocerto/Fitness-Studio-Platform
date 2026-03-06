@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ContractStatus, Prisma, PlanType } from "@prisma/client";
+import { BillingPeriod, ContractStatus, Prisma, PlanType } from "@prisma/client";
 
 import {
   contractStatusQuerySchema,
@@ -8,6 +8,12 @@ import {
 } from "@/lib/contract-validation";
 import { prisma } from "@/lib/prisma";
 import { getStudioId, missingStudioHeaderResponse } from "@/lib/tenant";
+
+function addOneMonth(date: Date): Date {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + 1);
+  return result;
+}
 
 export async function GET(request: NextRequest) {
   const studioId = await getStudioId();
@@ -54,7 +60,7 @@ export async function GET(request: NextRequest) {
           select: { id: true, first_name: true, last_name: true },
         },
         plan: {
-          select: { id: true, name: true, type: true },
+          select: { id: true, name: true, type: true, billing_period: true },
         },
       },
       orderBy: {
@@ -117,6 +123,14 @@ export async function POST(request: NextRequest) {
 
     const remaining_classes = plan.type === PlanType.LIMITED ? plan.class_limit : null;
 
+    // For LIMITED+MONTHLY plans, set next_billing_date to one month from start
+    // This is when remaining_classes will be reset
+    const startDateObj = new Date(start_date);
+    let next_billing_date: Date | null = null;
+    if (plan.type === PlanType.LIMITED && plan.billing_period === BillingPeriod.MONTHLY) {
+      next_billing_date = addOneMonth(startDateObj);
+    }
+
     const contract = await prisma.contract.create({
       data: {
         studio_id: studioId,
@@ -124,14 +138,16 @@ export async function POST(request: NextRequest) {
         plan_id,
         status: ContractStatus.ACTIVE,
         plan_type_snapshot: plan.type,
+        billing_period_snapshot: plan.billing_period,
         class_limit_snapshot: plan.class_limit,
         remaining_classes,
-        start_date: new Date(start_date),
+        start_date: startDateObj,
         end_date: end_date ? new Date(end_date) : null,
+        next_billing_date,
       },
       include: {
         member: { select: { id: true, first_name: true, last_name: true } },
-        plan: { select: { id: true, name: true, type: true } },
+        plan: { select: { id: true, name: true, type: true, billing_period: true } },
       },
     });
 

@@ -5,21 +5,25 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 
 type PaymentStatus = "RECORDED" | "REFUNDED" | "VOID";
-type PaymentMethod = "CASH" | "CARD" | "BANK_TRANSFER" | "OTHER";
+type PaymentType = "CONTRACT" | "PRODUCT_SALE" | "OTHER";
 
 type Payment = {
   id: string;
+  payment_type: PaymentType;
   amount_cents: number;
   currency: string;
-  method: PaymentMethod;
+  method: string;
   status: PaymentStatus;
   paid_at: string;
+  product_qty: number | null;
   note: string | null;
   member: { id: string; first_name: string; last_name: string };
   contract: { id: string; status: string } | null;
+  product: { id: string; name: string; sku: string | null } | null;
 };
 
 type StatusFilter = "ALL" | PaymentStatus;
+type TypeFilter = "ALL" | PaymentType;
 
 function formatAmount(cents: number, currency: string) {
   return `${currency} ${(cents / 100).toFixed(2)}`;
@@ -29,12 +33,17 @@ function formatDatetime(value: string) {
   return new Date(value).toLocaleString();
 }
 
+const TYPE_LABELS: Record<PaymentType, string> = {
+  CONTRACT: "Contract",
+  PRODUCT_SALE: "Product Sale",
+  OTHER: "Other",
+};
+
 export default function PaymentsClient() {
   const { data: session } = useSession();
   const studioId = session?.user?.studio_id ?? "";
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
-  const [memberIdFilter, setMemberIdFilter] = useState("");
-  const [contractIdFilter, setContractIdFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
   const [fromFilter, setFromFilter] = useState("");
   const [toFilter, setToFilter] = useState("");
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -52,18 +61,15 @@ export default function PaymentsClient() {
 
     const params = new URLSearchParams();
     if (statusFilter !== "ALL") params.set("status", statusFilter);
-    if (memberIdFilter.trim()) params.set("member_id", memberIdFilter.trim());
-    if (contractIdFilter.trim()) params.set("contract_id", contractIdFilter.trim());
+    if (typeFilter !== "ALL") params.set("payment_type", typeFilter);
     if (fromFilter) params.set("from", fromFilter);
     if (toFilter) params.set("to", toFilter);
     const query = params.size > 0 ? `?${params.toString()}` : "";
 
     try {
-      const response = await fetch(`/api/payments${query}`, {
-        cache: "no-store",
-      });
-
+      const response = await fetch(`/api/payments${query}`, { cache: "no-store" });
       const payload = (await response.json()) as { data?: Payment[]; message?: string };
+
       if (!response.ok) {
         setPayments([]);
         setError(payload.message ?? "Failed to load payments.");
@@ -76,7 +82,7 @@ export default function PaymentsClient() {
     } finally {
       setLoading(false);
     }
-  }, [studioId, statusFilter, memberIdFilter, contractIdFilter, fromFilter, toFilter]);
+  }, [studioId, statusFilter, typeFilter, fromFilter, toFilter]);
 
   useEffect(() => {
     if (studioId) {
@@ -84,7 +90,17 @@ export default function PaymentsClient() {
     } else {
       setPayments([]);
     }
-  }, [studioId, statusFilter, fetchPayments]);
+  }, [studioId, statusFilter, typeFilter, fetchPayments]);
+
+  function referenceLabel(payment: Payment) {
+    if (payment.payment_type === "CONTRACT" && payment.contract) {
+      return `Contract (${payment.contract.status})`;
+    }
+    if (payment.payment_type === "PRODUCT_SALE" && payment.product) {
+      return `${payment.product.name}${payment.product_qty ? ` x${payment.product_qty}` : ""}`;
+    }
+    return "-";
+  }
 
   return (
     <section className="stack">
@@ -97,38 +113,29 @@ export default function PaymentsClient() {
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           >
-            <option value="ALL">ALL</option>
-            <option value="RECORDED">RECORDED</option>
-            <option value="REFUNDED">REFUNDED</option>
-            <option value="VOID">VOID</option>
+            <option value="ALL">All</option>
+            <option value="RECORDED">Recorded</option>
+            <option value="REFUNDED">Refunded</option>
+            <option value="VOID">Void</option>
           </select>
         </label>
 
         <label>
-          Member ID
-          <input
-            value={memberIdFilter}
-            onChange={(e) => setMemberIdFilter(e.target.value)}
-            placeholder="UUID (optional)"
-          />
-        </label>
-
-        <label>
-          Contract ID
-          <input
-            value={contractIdFilter}
-            onChange={(e) => setContractIdFilter(e.target.value)}
-            placeholder="UUID (optional)"
-          />
+          Type
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
+          >
+            <option value="ALL">All</option>
+            <option value="CONTRACT">Contract</option>
+            <option value="PRODUCT_SALE">Product Sale</option>
+            <option value="OTHER">Other</option>
+          </select>
         </label>
 
         <label>
           From
-          <input
-            type="date"
-            value={fromFilter}
-            onChange={(e) => setFromFilter(e.target.value)}
-          />
+          <input type="date" value={fromFilter} onChange={(e) => setFromFilter(e.target.value)} />
         </label>
 
         <label>
@@ -155,7 +162,8 @@ export default function PaymentsClient() {
           <tr>
             <th>Paid At</th>
             <th>Member</th>
-            <th>Contract</th>
+            <th>Type</th>
+            <th>Reference</th>
             <th>Amount</th>
             <th>Method</th>
             <th>Status</th>
@@ -165,16 +173,20 @@ export default function PaymentsClient() {
         <tbody>
           {payments.length === 0 ? (
             <tr>
-              <td colSpan={7}>{loading ? "Loading..." : "No payments found."}</td>
+              <td colSpan={8}>{loading ? "Loading..." : "No payments found."}</td>
             </tr>
           ) : (
             payments.map((payment) => (
-              <tr key={payment.id}>
+              <tr
+                key={payment.id}
+                style={payment.status === "VOID" ? { opacity: 0.5 } : undefined}
+              >
                 <td>{formatDatetime(payment.paid_at)}</td>
                 <td>
                   {payment.member.first_name} {payment.member.last_name}
                 </td>
-                <td>{payment.contract ? payment.contract.status : "-"}</td>
+                <td>{TYPE_LABELS[payment.payment_type]}</td>
+                <td>{referenceLabel(payment)}</td>
                 <td>{formatAmount(payment.amount_cents, payment.currency)}</td>
                 <td>{payment.method}</td>
                 <td>{payment.status}</td>
